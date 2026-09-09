@@ -82,7 +82,8 @@ PSA_14_TESTS = psa_mldsa_test psa_mlkem_test psa_xof_test psa_key_wrap_test \
 
 # Regression tests: one self-contained binary per finding, all
 # built from psa_server/<name>.c with the default link recipe.
-PSA_REGRESSION_TESTS = psa_xof_input_wrap_test \
+PSA_REGRESSION_TESTS = psa_aead_multipart_test \
+	psa_xof_input_wrap_test \
 	psa_pbkdf2_cmac_test \
 	psa_kdf_input_key_test \
 	psa_ecc_verify_curve_test \

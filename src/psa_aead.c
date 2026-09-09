@@ -717,7 +717,7 @@ static psa_status_t wolfpsa_aead_stream_update(wolfpsa_aead_ctx_t *ctx,
     aad_len = ctx->aad_length;
 
     if (PSA_ALG_AEAD_EQUAL(ctx->alg, PSA_ALG_GCM)) {
-#ifdef HAVE_AESGCM
+#if defined(HAVE_AESGCM) && defined(WOLFSSL_AESGCM_STREAM)
         if (first) {
             ret = (ctx->direction) ?
                 wc_AesGcmEncryptInit(&ctx->gcm, ctx->key,
@@ -796,7 +796,7 @@ static psa_status_t wolfpsa_aead_stream_final(wolfpsa_aead_ctx_t *ctx,
     int ret;
 
     if (PSA_ALG_AEAD_EQUAL(ctx->alg, PSA_ALG_GCM)) {
-#ifdef HAVE_AESGCM
+#if defined(HAVE_AESGCM) && defined(WOLFSSL_AESGCM_STREAM)
         ret = (ctx->direction) ?
             wc_AesGcmEncryptFinal(&ctx->gcm, tag, (word32)tag_len) :
             wc_AesGcmDecryptFinal(&ctx->gcm, tag, (word32)tag_len);
@@ -920,13 +920,18 @@ psa_status_t psa_aead_update(psa_aead_operation_t *operation,
 
     /* Multipart path: emit the chunk now; finish()/verify() emits only the
      * tag. Buffering and streaming must not be mixed within one operation. */
-    if (ctx->input_length > 0) {
+    if (ctx->input != NULL) {
         status = PSA_ERROR_BAD_STATE;
         psa_aead_abort(operation);
         return status;
     }
     if (output_size < input_length) {
         status = PSA_ERROR_BUFFER_TOO_SMALL;
+        psa_aead_abort(operation);
+        return status;
+    }
+    if (wolfpsa_check_word32_length(input_length) != PSA_SUCCESS) {
+        status = PSA_ERROR_INVALID_ARGUMENT;
         psa_aead_abort(operation);
         return status;
     }
@@ -937,6 +942,9 @@ psa_status_t psa_aead_update(psa_aead_operation_t *operation,
         return status;
     }
     ctx->streaming = 1;
+    /* Track the total streamed payload: finish()/verify() must reject a
+     * total that does not match the set_lengths() declaration. */
+    ctx->input_length += input_length;
     *output_length = input_length;
     return PSA_SUCCESS;
 }
@@ -968,9 +976,14 @@ static psa_status_t wolfpsa_aead_encrypt_final(wolfpsa_aead_ctx_t *ctx,
     if (ctx->streaming) {
         psa_status_t status;
 
-        /* All payload was emitted from update(); emit only the tag. The
-         * set_lengths values were already enforced per chunk in update(),
-         * and the buffered input is empty by construction. */
+        /* All payload was emitted from update(); emit only the tag.
+         * update() enforces the per-chunk maximum, so the total can only
+         * be short of the declared length here. */
+        if (ctx->lengths_set &&
+            (ctx->aad_length != ctx->ad_expected ||
+             ctx->input_length != ctx->plaintext_expected)) {
+            return PSA_ERROR_INVALID_ARGUMENT;
+        }
         if (tag_size < ctx->tag_length) {
             return PSA_ERROR_BUFFER_TOO_SMALL;
         }
@@ -1126,9 +1139,14 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
     if (ctx->streaming) {
         psa_status_t status;
 
-        /* All payload was emitted from update(); verify only the tag. The
-         * set_lengths values were already enforced per chunk in update(),
-         * and the buffered input is empty by construction. */
+        /* All payload was emitted from update(); verify only the tag.
+         * update() enforces the per-chunk maximum, so the total can only
+         * be short of the declared length here. */
+        if (ctx->lengths_set &&
+            (ctx->aad_length != ctx->ad_expected ||
+             ctx->input_length != ctx->plaintext_expected)) {
+            return PSA_ERROR_INVALID_ARGUMENT;
+        }
         if (tag_length != ctx->tag_length &&
             (ctx->alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) == 0) {
             return PSA_ERROR_INVALID_SIGNATURE;

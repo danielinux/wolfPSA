@@ -55,7 +55,7 @@ typedef struct wolfpsa_aead_ctx {
      * path (update() with NULL output) buffers into input and leaves these
      * unused. */
     int streaming;
-#ifdef HAVE_AESGCM
+#if defined(HAVE_AESGCM) && defined(WOLFSSL_AESGCM_STREAM)
     Aes gcm;
 #endif
 #if defined(HAVE_CHACHA) && defined(HAVE_POLY1305)

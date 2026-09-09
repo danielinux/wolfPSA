@@ -30,7 +30,7 @@ jobs:
           - name: des3
             modifiers: "-WOLFSSL_DES3 -WOLFSSL_DES_ECB +NO_DES3"
           - name: aes-gcm
-            modifiers: "-HAVE_AESGCM"
+            modifiers: "-HAVE_AESGCM -WOLFSSL_AESGCM_STREAM"
           - name: aes-ccm
             modifiers: "-HAVE_AESCCM"
           - name: aes-ctr

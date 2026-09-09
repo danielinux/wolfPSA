@@ -132,6 +132,10 @@ extern "C" {
 #define WOLFSSL_DES3
 #define WOLFSSL_DES_ECB
 #define HAVE_AESGCM
+/* Streaming AES-GCM (wc_AesGcmEncryptUpdate) so the multipart AEAD path can
+ * emit the payload from psa_aead_update() instead of buffering it all for
+ * finish(). */
+#define WOLFSSL_AESGCM_STREAM
 #define HAVE_AESCCM
 #define HAVE_AES_ECB
 #define WOLFSSL_AES_COUNTER

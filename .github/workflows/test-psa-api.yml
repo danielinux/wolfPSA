@@ -84,6 +84,7 @@ jobs:
         run: >
           make -C test
           psa_api_test
+          psa_aead_multipart_test
           psa_des3_stack_scrub_test
           psa_ecc_bit_inference_test
           psa_ecc_curve_id_test
@@ -127,6 +128,7 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}:${{ github.workspace }}/../wolfssl/src/.libs
         run: |
           for t in psa_api_test \
+                   psa_aead_multipart_test \
                    psa_ecc_bit_inference_test \
                    psa_des3_stack_scrub_test \
                    psa_ecc_curve_id_test \

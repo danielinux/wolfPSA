@@ -4171,7 +4171,7 @@ static int test_chacha20_poly1305_multipart_finish_split_buffers(void)
         ret = TEST_FAIL;
         goto cleanup;
     }
-    if (check_true(update_len == 0,
+    if (check_true(update_len == sizeof(plaintext),
                    "psa_aead_update(ChaCha20 multipart) length") != TEST_OK) {
         ret = TEST_FAIL;
         goto cleanup;
@@ -4183,7 +4183,7 @@ static int test_chacha20_poly1305_multipart_finish_split_buffers(void)
         ret = TEST_FAIL;
         goto cleanup;
     }
-    if (check_true(ciphertext_len == sizeof(ciphertext),
+    if (check_true(ciphertext_len == 0,
                    "psa_aead_finish(ChaCha20 ciphertext length)") != TEST_OK) {
         ret = TEST_FAIL;
         goto cleanup;
@@ -4208,13 +4208,13 @@ static int test_chacha20_poly1305_multipart_finish_split_buffers(void)
         ret = TEST_FAIL;
         goto cleanup;
     }
-    if (check_buf_eq("psa_aead_finish(ChaCha20 ciphertext matches reference)",
-                     ciphertext, combined, sizeof(ciphertext)) != TEST_OK) {
+    if (check_buf_eq("psa_aead_update(ChaCha20 ciphertext matches reference)",
+                     update_out, combined, sizeof(plaintext)) != TEST_OK) {
         ret = TEST_FAIL;
         goto cleanup;
     }
     if (check_buf_eq("psa_aead_finish(ChaCha20 tag matches reference)",
-                     tag, combined + sizeof(ciphertext), sizeof(tag)) != TEST_OK) {
+                     tag, combined + sizeof(plaintext), sizeof(tag)) != TEST_OK) {
         ret = TEST_FAIL;
         goto cleanup;
     }
