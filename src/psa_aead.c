@@ -210,10 +210,17 @@ static psa_status_t wolfpsa_aead_check_key(psa_key_id_t key,
     return PSA_SUCCESS;
 }
 
+/* Set up an AEAD operation. 'multipart' is 1 when the operation is driven
+ * through the public multipart API (psa_aead_encrypt_setup() and friends) and
+ * 0 for the internal one-shot path, which buffers the payload in update() and
+ * calls the wolfCrypt one-shot primitive from finish()/verify(). Only the
+ * multipart path needs the wolfCrypt streaming APIs, so the streaming build
+ * options are required only when 'multipart' is set. */
 static psa_status_t wolfpsa_aead_setup(psa_aead_operation_t *operation,
                                        psa_key_id_t key,
                                        psa_algorithm_t alg,
-                                       psa_key_usage_t usage)
+                                       psa_key_usage_t usage,
+                                       int multipart)
 {
     psa_key_attributes_t attributes;
     uint8_t *key_data = NULL;
@@ -228,6 +235,9 @@ static psa_status_t wolfpsa_aead_setup(psa_aead_operation_t *operation,
         return PSA_ERROR_BAD_STATE;
     }
 
+    /* Only referenced by the streaming-build guards below. */
+    (void)multipart;
+
     if (!PSA_ALG_IS_AEAD(alg) || PSA_ALG_AEAD_EQUAL(alg, PSA_ALG_CCM_STAR_NO_TAG)) {
         return PSA_ERROR_NOT_SUPPORTED;
     }
@@ -235,16 +245,26 @@ static psa_status_t wolfpsa_aead_setup(psa_aead_operation_t *operation,
         return PSA_ERROR_INVALID_ARGUMENT;
     }
     /* Multipart GCM streams through the wolfCrypt GCM streaming API, which
-     * only exists with WOLFSSL_AESGCM_STREAM; one-shot GCM does not need it. */
-#if !defined(HAVE_AESGCM) || !defined(WOLFSSL_AESGCM_STREAM)
+     * only exists with WOLFSSL_AESGCM_STREAM; the buffered one-shot path uses
+     * wc_AesGcmEncrypt()/wc_AesGcmDecrypt() and needs HAVE_AESGCM only. */
+#if !defined(HAVE_AESGCM)
     if (PSA_ALG_AEAD_EQUAL(alg, PSA_ALG_GCM)) {
+        return PSA_ERROR_NOT_SUPPORTED;
+    }
+#elif !defined(WOLFSSL_AESGCM_STREAM)
+    if (multipart && PSA_ALG_AEAD_EQUAL(alg, PSA_ALG_GCM)) {
         return PSA_ERROR_NOT_SUPPORTED;
     }
 #endif
     /* Multipart CCM streams through the AES-direct block API, which only
-     * exists with WOLFSSL_AES_DIRECT; one-shot CCM does not need it. */
-#if !defined(HAVE_AESCCM) || !defined(WOLFSSL_AES_DIRECT)
+     * exists with WOLFSSL_AES_DIRECT; the buffered one-shot path uses
+     * wc_AesCcmEncrypt()/wc_AesCcmDecrypt() and needs HAVE_AESCCM only. */
+#if !defined(HAVE_AESCCM)
     if (PSA_ALG_AEAD_EQUAL(alg, PSA_ALG_CCM)) {
+        return PSA_ERROR_NOT_SUPPORTED;
+    }
+#elif !defined(WOLFSSL_AES_DIRECT)
+    if (multipart && PSA_ALG_AEAD_EQUAL(alg, PSA_ALG_CCM)) {
         return PSA_ERROR_NOT_SUPPORTED;
     }
 #endif
@@ -331,14 +351,14 @@ psa_status_t psa_aead_encrypt_setup(psa_aead_operation_t *operation,
                                     psa_key_id_t key,
                                     psa_algorithm_t alg)
 {
-    return wolfpsa_aead_setup(operation, key, alg, PSA_KEY_USAGE_ENCRYPT);
+    return wolfpsa_aead_setup(operation, key, alg, PSA_KEY_USAGE_ENCRYPT, 1);
 }
 
 psa_status_t psa_aead_decrypt_setup(psa_aead_operation_t *operation,
                                     psa_key_id_t key,
                                     psa_algorithm_t alg)
 {
-    return wolfpsa_aead_setup(operation, key, alg, PSA_KEY_USAGE_DECRYPT);
+    return wolfpsa_aead_setup(operation, key, alg, PSA_KEY_USAGE_DECRYPT, 1);
 }
 
 psa_status_t psa_aead_set_lengths(psa_aead_operation_t *operation,
@@ -1794,7 +1814,7 @@ psa_status_t psa_aead_encrypt(psa_key_id_t key,
     }
 #endif /* HAVE_ASCON */
 
-    status = psa_aead_encrypt_setup(&operation, key, alg);
+    status = wolfpsa_aead_setup(&operation, key, alg, PSA_KEY_USAGE_ENCRYPT, 0);
     if (status != PSA_SUCCESS) {
         return status;
     }
@@ -1884,7 +1904,7 @@ psa_status_t psa_aead_decrypt(psa_key_id_t key,
     }
 #endif /* HAVE_ASCON */
 
-    status = psa_aead_decrypt_setup(&operation, key, alg);
+    status = wolfpsa_aead_setup(&operation, key, alg, PSA_KEY_USAGE_DECRYPT, 0);
     if (status != PSA_SUCCESS) {
         return status;
     }

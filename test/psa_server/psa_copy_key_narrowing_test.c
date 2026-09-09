@@ -14,8 +14,11 @@
  * policy, so a copy involving it must be rejected.
  *
  * The test covers the signature wildcards (ECDSA, ML-DSA) in both
- * directions and both key lifetimes, and the HMAC rejection in both
- * lifetimes (volatile and persistent copies take different code paths).
+ * directions and both key lifetimes, the HMAC rejection in both
+ * lifetimes (volatile and persistent copies take different code paths),
+ * and the rejection of the hashless PSA_ALG_ECDSA_ANY against
+ * PSA_ALG_ECDSA(PSA_ALG_ANY_HASH), which the PSA Crypto API defines as
+ * two distinct algorithms.
  *
  * This file is part of wolfPSA.
  *
@@ -227,6 +230,28 @@ int main(void)
                              PSA_KEY_ID_USER_MIN + 104, 1,
                              PSA_ALG_ECDSA(PSA_ALG_SHA_256),
                              "persistent ECDSA SHA_256 -> ANY_HASH");
+        /* PSA_ALG_ECDSA_ANY is hashless, not a member of ANY_HASH: a copy
+         * between it and PSA_ALG_ECDSA(PSA_ALG_ANY_HASH) must be rejected in
+         * both directions, or the copy would gain a forbidden policy. */
+        ret |= run_copy_case(PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1), 256,
+                             PSA_ALG_ECDSA_ANY,
+                             PSA_ALG_ECDSA(PSA_ALG_ANY_HASH),
+                             PSA_KEY_LIFETIME_VOLATILE, PSA_KEY_ID_NULL,
+                             PSA_KEY_ID_NULL, 0, PSA_ALG_NONE,
+                             "volatile ECDSA_ANY -> ANY_HASH");
+        ret |= run_copy_case(PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1), 256,
+                             PSA_ALG_ECDSA(PSA_ALG_ANY_HASH),
+                             PSA_ALG_ECDSA_ANY,
+                             PSA_KEY_LIFETIME_VOLATILE, PSA_KEY_ID_NULL,
+                             PSA_KEY_ID_NULL, 0, PSA_ALG_NONE,
+                             "volatile ECDSA ANY_HASH -> ECDSA_ANY");
+        ret |= run_copy_case(PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1), 256,
+                             PSA_ALG_ECDSA_ANY,
+                             PSA_ALG_ECDSA(PSA_ALG_ANY_HASH),
+                             PSA_KEY_LIFETIME_PERSISTENT,
+                             PSA_KEY_ID_USER_MIN + 107,
+                             PSA_KEY_ID_USER_MIN + 108, 0, PSA_ALG_NONE,
+                             "persistent ECDSA_ANY -> ANY_HASH");
         /* ML-DSA wildcard: guards the PSA_ALG_GET_HASH() path (its hash
          * field is not a sign-hash field). Skipped when ML-DSA is not
          * built into the library. */

@@ -2253,6 +2253,7 @@ static int wolfpsa_alg_compatible(psa_algorithm_t src_alg,
     int ok = 0;
     psa_algorithm_t src_hash;
     psa_algorithm_t dst_hash;
+    psa_algorithm_t concrete_hash;
 
     if (src_alg == dst_alg) {
         ok = 1;
@@ -2264,12 +2265,24 @@ static int wolfpsa_alg_compatible(psa_algorithm_t src_alg,
         /* PSA_ALG_ANY_HASH is a signature-scheme wildcard in the PSA
          * supported key policies: it narrows to any concrete hash of the
          * same base family, mirroring wolfpsa_sign_alg_permitted().
-         * HMAC(ANY_HASH) is not a valid policy, and a zero hash field
-         * (raw sign forms, PSA_ALG_ECDSA_ANY) is not a member of
-         * ANY_HASH. */
-        if ((src_hash == PSA_ALG_ANY_HASH || dst_hash == PSA_ALG_ANY_HASH) &&
-            src_hash != dst_hash) {
-            ok = 1;
+         * HMAC(ANY_HASH) is not a valid policy. Exactly one side must be
+         * the wildcard; two wildcards are the equality case above. */
+        if ((src_hash == PSA_ALG_ANY_HASH) != (dst_hash == PSA_ALG_ANY_HASH)) {
+            concrete_hash = (src_hash == PSA_ALG_ANY_HASH) ? dst_hash
+                                                           : src_hash;
+            if (concrete_hash != PSA_ALG_NONE) {
+                ok = 1;
+            }
+            else {
+                /* An empty hash field is a hashless algorithm, not a member
+                 * of ANY_HASH: PSA_ALG_ECDSA_ANY is explicitly not covered
+                 * by PSA_ALG_ECDSA(PSA_ALG_ANY_HASH), so admitting it here
+                 * would let a copy gain a forbidden policy.
+                 * PSA_ALG_RSA_PKCS1V15_SIGN_RAW is the single exception the
+                 * PSA Crypto API grants to that rule. */
+                ok = ((src_alg & ~PSA_ALG_HASH_MASK) ==
+                      PSA_ALG_RSA_PKCS1V15_SIGN_BASE);
+            }
         }
     }
 
