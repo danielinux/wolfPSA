@@ -1342,6 +1342,16 @@ psa_status_t psa_import_key(
             *key_id = PSA_KEY_ID_NULL;
             return PSA_ERROR_ALREADY_EXISTS;
         }
+        if (ret != WOLFPSA_STORE_NOT_AVAILABLE) {
+            /* The probe failed for a reason other than "not found" (e.g. an
+             * I/O error): do not proceed to the write path, which would
+             * overwrite a record we could not inspect. */
+            WOLFPSA_UNLOCK();
+            wc_ForceZero(buffer, buffer_size);
+            XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+            *key_id = PSA_KEY_ID_NULL;
+            return PSA_ERROR_STORAGE_FAILURE;
+        }
 
         /* Open and write key to persistent storage */
         ret = wolfPSA_Store_OpenSz(WOLFPSA_STORE_KEY, (unsigned long)*key_id, 0,
