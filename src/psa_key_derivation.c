@@ -460,7 +460,8 @@ psa_status_t psa_key_derivation_setup(psa_key_derivation_operation_t *operation,
     }
 #endif
 #if !defined(WOLFSSL_CMAC) || defined(NO_AES)
-    if (kdf_alg == PSA_ALG_SP800_108_COUNTER_CMAC) {
+    if (kdf_alg == PSA_ALG_SP800_108_COUNTER_CMAC ||
+        kdf_alg == PSA_ALG_PBKDF2_AES_CMAC_PRF_128) {
         return PSA_ERROR_NOT_SUPPORTED;
     }
 #endif
