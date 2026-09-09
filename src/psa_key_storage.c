@@ -1701,6 +1701,7 @@ psa_status_t psa_export_key(
                    sizeof(psa_key_lifetime_t) + sizeof(size_t)];
     size_t key_data_length;
     size_t attr_length;
+    psa_key_usage_t usage;
     int ret;
     void* store = NULL;
     
@@ -1743,19 +1744,6 @@ psa_status_t psa_export_key(
         return status;
     }
 
-    /* Get key info */
-    psa_key_attributes_t attributes;
-    status = psa_get_key_attributes(key_id, &attributes);
-    if (status != PSA_SUCCESS) {
-        return status;
-    }
-    
-    /* Check if the key can be exported */
-    if ((psa_get_key_usage_flags(&attributes) &
-         PSA_KEY_USAGE_EXPORT) == 0) {
-        return PSA_ERROR_NOT_PERMITTED;
-    }
-    
     /* Calculate attribute length */
     attr_length = sizeof(psa_key_type_t) + sizeof(psa_key_bits_t) +
                  sizeof(psa_key_usage_t) + sizeof(psa_algorithm_t) +
@@ -1773,6 +1761,16 @@ psa_status_t psa_export_key(
     if (ret != (int)(attr_length + sizeof(size_t))) {
         wolfPSA_Store_Close(store);
         return PSA_ERROR_STORAGE_FAILURE;
+    }
+
+    /* Authorize the export from the same open handle as the data read below,
+     * so a concurrent destroy/import of this key ID cannot swap in a
+     * non-exportable replacement between the check and the read. */
+    XMEMCPY(&usage, header + sizeof(psa_key_type_t) + sizeof(psa_key_bits_t),
+            sizeof(psa_key_usage_t));
+    if ((usage & PSA_KEY_USAGE_EXPORT) == 0) {
+        wolfPSA_Store_Close(store);
+        return PSA_ERROR_NOT_PERMITTED;
     }
 
     /* Get key data length */
