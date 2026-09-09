@@ -326,15 +326,15 @@ static psa_status_t wolfpsa_asymmetric_check_key(psa_key_id_t key,
     return PSA_SUCCESS;
 }
 
-/* Validate context parameter against algorithm/key constraints.
+/* Validate context parameter against algorithm constraints.
  * context_length > 255 is always rejected (RFC 8032 / FIPS 204 limit).
  * A non-empty context is only permitted for:
  *   PSA_ALG_EDDSA_CTX, PSA_ALG_ED25519PH, PSA_ALG_ED448PH,
- *   PSA_ALG_PURE_EDDSA when the key is Ed448 (bits==448),
  *   PSA_ALG_IS_ML_DSA / PSA_ALG_IS_HASH_ML_DSA /
  *     PSA_ALG_IS_DETERMINISTIC_HASH_ML_DSA families.
- * All other algorithms with context_length != 0 return
- * PSA_ERROR_INVALID_ARGUMENT. */
+ * PSA_ALG_PURE_EDDSA is context-free (a non-empty context requires
+ * PSA_ALG_EDDSA_CTX). All other algorithms with context_length != 0
+ * return PSA_ERROR_INVALID_ARGUMENT. */
 static psa_status_t wolfpsa_check_context(psa_algorithm_t alg,
                                           psa_key_type_t key_type,
                                           size_t key_bits,
@@ -342,6 +342,8 @@ static psa_status_t wolfpsa_check_context(psa_algorithm_t alg,
                                           size_t context_length)
 {
     (void)context;
+    (void)key_type;
+    (void)key_bits;
 
     if (context_length > 255) {
         return PSA_ERROR_INVALID_ARGUMENT;
@@ -354,15 +356,6 @@ static psa_status_t wolfpsa_check_context(psa_algorithm_t alg,
         alg == PSA_ALG_ED25519PH  ||
         alg == PSA_ALG_ED448PH) {
         return PSA_SUCCESS;
-    }
-    if (alg == PSA_ALG_PURE_EDDSA) {
-        /* Ed448 pure EdDSA accepts a context per RFC 8032 */
-        if ((key_type == PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_TWISTED_EDWARDS) ||
-             key_type == PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_TWISTED_EDWARDS)) &&
-            key_bits == 448) {
-            return PSA_SUCCESS;
-        }
-        return PSA_ERROR_INVALID_ARGUMENT;
     }
 #if defined(WOLFSSL_HAVE_MLDSA)
     if (PSA_ALG_IS_ML_DSA(alg) ||
