@@ -33,9 +33,12 @@
 #include <wolfpsa/psa_engine.h>
 #include <wolfssl/wolfcrypt/wc_port.h>
 
-/* Init latch. The check-and-set in psa_crypto_init() is serialized so
- * wolfCrypt_Init() runs exactly once even if several threads race at boot, and
- * the read below takes the same lock so it is not a data race with that write. */
+/* Init latch. psa_crypto_init() must complete single-threaded (per the PSA
+ * contract) before any concurrent PSA use: the mutex-creation bootstrap in
+ * wolfpsa_lock_ensure_init() is a plain, non-atomic flag guard. Once the lock
+ * is established, this latch serializes subsequent calls so wolfCrypt_Init()
+ * runs exactly once, and the read below takes the same lock so it is not a
+ * data race with that write. */
 static int g_psa_crypto_initialized = 0;
 
 int wolfPSA_CryptoIsInitialized(void)
