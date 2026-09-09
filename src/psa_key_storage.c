@@ -2277,6 +2277,25 @@ static int wolfpsa_alg_compatible(psa_algorithm_t src_alg,
     return ok;
 }
 
+/* A copy must conform to both policies (PSA Crypto API): when the
+ * destination policy is the inclusive ANY_HASH wildcard of the source's
+ * concrete algorithm, the stored policy is the concrete one.
+ * wolfpsa_alg_compatible() already rejected every pair with no common
+ * algorithm, so the other direction (concrete dst, wildcard src) keeps the
+ * destination's concrete policy. */
+static psa_algorithm_t wolfpsa_copy_key_policy_alg(psa_algorithm_t src_alg,
+                                                  psa_algorithm_t dst_alg)
+{
+    if (dst_alg != src_alg &&
+        ((PSA_ALG_IS_SIGN_HASH(dst_alg) &&
+          PSA_ALG_SIGN_GET_HASH(dst_alg) == PSA_ALG_ANY_HASH) ||
+         (PSA_ALG_IS_HMAC(dst_alg) &&
+          PSA_ALG_HMAC_GET_HASH(dst_alg) == PSA_ALG_ANY_HASH))) {
+        return src_alg;
+    }
+    return dst_alg;
+}
+
 /* Copy a key in the PSA key storage */
 psa_status_t psa_copy_key(
     psa_key_id_t source_key,
@@ -2347,6 +2366,8 @@ psa_status_t psa_copy_key(
             dst_attr.bits = (dst_attr.bits == 0) ? vol_attr.bits : dst_attr.bits;
             dst_attr.policy.usage = psa_get_key_usage_flags(&vol_attr) &
                                     psa_get_key_usage_flags(&dst_attr);
+            dst_attr.policy.alg = wolfpsa_copy_key_policy_alg(
+                psa_get_key_algorithm(&vol_attr), dst_attr.policy.alg);
 
             status = psa_import_key(&dst_attr, key_data,
                                     key_data_length, target_key);
@@ -2416,6 +2437,8 @@ psa_status_t psa_copy_key(
     dst_attr.bits = (dst_attr.bits == 0) ? src_attr.bits : dst_attr.bits;
     dst_attr.policy.usage = psa_get_key_usage_flags(&src_attr) &
                             psa_get_key_usage_flags(&dst_attr);
+    dst_attr.policy.alg = wolfpsa_copy_key_policy_alg(
+        psa_get_key_algorithm(&src_attr), dst_attr.policy.alg);
 
     XMEMCPY(&key_data_length, header + attr_length, sizeof(size_t));
     status = wolfpsa_validate_stored_key_data_length(key_data_length);

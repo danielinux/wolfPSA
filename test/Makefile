@@ -83,6 +83,7 @@ PSA_14_TESTS = psa_mldsa_test psa_mlkem_test psa_xof_test psa_key_wrap_test \
 # Regression tests: one self-contained binary per finding, all
 # built from psa_server/<name>.c with the default link recipe.
 PSA_REGRESSION_TESTS = psa_aead_multipart_test \
+	psa_copy_key_narrowing_test \
 	psa_xof_input_wrap_test \
 	psa_pbkdf2_cmac_test \
 	psa_kdf_input_key_test \
@@ -101,6 +102,8 @@ PSA_REGRESSION_TESTS = psa_aead_multipart_test \
 	psa_des3_pkcs7_test \
 	psa_eddsa_mont_export_test \
 	psa_eddsa_mont_gen_test \
+	psa_pure_eddsa_context_test \
+	psa_sign_hash_eddsa_test \
 	psa_key_infer_bits_test \
 	psa_cipher_oneshot_len_test \
 	psa_pqc_export_seed_test \

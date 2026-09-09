@@ -57,6 +57,7 @@ typedef struct wolfpsa_aead_ctx {
     int streaming;
 #if defined(HAVE_AESGCM) && defined(WOLFSSL_AESGCM_STREAM)
     Aes gcm;
+    int gcm_inited;
 #endif
 #if defined(HAVE_CHACHA) && defined(HAVE_POLY1305)
     ChaChaPoly_Aead chacha;
@@ -65,6 +66,7 @@ typedef struct wolfpsa_aead_ctx {
     /* Hand-rolled streaming CCM (wolfCrypt has no streaming CCM API): a CTR
      * for the ciphertext plus a running CBC-MAC for the tag. */
     Aes ccm_aes;
+    int ccm_aes_inited;
     uint8_t ccm_ctr[16];
     uint8_t ccm_mac[16];
     uint8_t ccm_mblk[16];

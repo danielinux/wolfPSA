@@ -4,6 +4,9 @@
  * signed/verified with it. A context-bearing EdDSA requires
  * PSA_ALG_EDDSA_CTX.
  *
+ * PSA_ALG_PURE_EDDSA is a sign-message algorithm, so the context cases are
+ * exercised through psa_sign_message_with_context().
+ *
  * Standalone regression test. Build:
  *   gcc -o /tmp/psa_pure_eddsa_context_test \
  *       test/psa_server/psa_pure_eddsa_context_test.c \
@@ -22,18 +25,18 @@ static int test_pure_eddsa_rejects_context(void)
     psa_key_id_t key_id = PSA_KEY_ID_NULL;
     psa_status_t st;
     int rc = 0;
-    uint8_t hash[32];
+    uint8_t message[32];
     uint8_t signature[128];
     size_t signature_length = 0;
     const uint8_t context[] = "ctx";
 
-    memset(hash, 0xab, sizeof(hash));
+    memset(message, 0xab, sizeof(message));
 
     attrs = psa_key_attributes_init();
     psa_set_key_type(&attrs,
                      PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_TWISTED_EDWARDS));
     psa_set_key_bits(&attrs, 448);
-    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_SIGN_HASH);
+    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_SIGN_MESSAGE);
     psa_set_key_algorithm(&attrs, PSA_ALG_PURE_EDDSA);
     psa_set_key_lifetime(&attrs, PSA_KEY_LIFETIME_VOLATILE);
 
@@ -45,11 +48,11 @@ static int test_pure_eddsa_rejects_context(void)
 
     /* PSA_ALG_PURE_EDDSA is context-free: a non-empty context must be
      * rejected with PSA_ERROR_INVALID_ARGUMENT. */
-    st = psa_sign_hash_with_context(key_id, PSA_ALG_PURE_EDDSA,
-                                    hash, sizeof(hash),
-                                    context, sizeof(context) - 1,
-                                    signature, sizeof(signature),
-                                    &signature_length);
+    st = psa_sign_message_with_context(key_id, PSA_ALG_PURE_EDDSA,
+                                       message, sizeof(message),
+                                       context, sizeof(context) - 1,
+                                       signature, sizeof(signature),
+                                       &signature_length);
     if (st != PSA_ERROR_INVALID_ARGUMENT) {
         printf("FAIL pure_eddsa non-empty context: expected "
                "PSA_ERROR_INVALID_ARGUMENT (%d), got %d\n",
@@ -60,11 +63,11 @@ static int test_pure_eddsa_rejects_context(void)
     }
 
     /* A zero-length context is still accepted (PureEdDSA with no context). */
-    st = psa_sign_hash_with_context(key_id, PSA_ALG_PURE_EDDSA,
-                                    hash, sizeof(hash),
-                                    context, 0,
-                                    signature, sizeof(signature),
-                                    &signature_length);
+    st = psa_sign_message_with_context(key_id, PSA_ALG_PURE_EDDSA,
+                                       message, sizeof(message),
+                                       context, 0,
+                                       signature, sizeof(signature),
+                                       &signature_length);
     if (st != PSA_SUCCESS) {
         printf("FAIL pure_eddsa zero context: expected PSA_SUCCESS, got %d\n",
                (int)st);

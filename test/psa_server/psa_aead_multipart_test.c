@@ -241,6 +241,98 @@ static void test_multipart_decrypt(psa_key_id_t key_id, psa_algorithm_t alg,
     }
 }
 
+/* In-place streaming CCM: psa_aead_update() with in == out must produce
+ * the same ciphertext and tag as non-overlapping buffers (PSA spec: 
+ * overlapping input and output buffers give the same result). Before the
+ * fix the CBC-MAC authenticated the ciphertext bytes on in-place
+ * encryption, so the tag diverged from the one-shot reference. */
+static void test_inplace_ccm(psa_key_id_t key_id, psa_algorithm_t alg,
+                             psa_key_type_t key_type,
+                             const uint8_t *nonce, size_t nonce_len,
+                             const uint8_t *aad, size_t aad_len,
+                             const uint8_t *pt, size_t pt_len)
+{
+    uint8_t ref[512 + PSA_AEAD_TAG_MAX_SIZE];
+    size_t ref_len = 0;
+    uint8_t buf[512];
+    uint8_t tag[PSA_AEAD_TAG_MAX_SIZE];
+    size_t tag_len = 0;
+    uint8_t fin_ct[PSA_AEAD_FINISH_OUTPUT_SIZE(key_type, alg) > 0 ?
+                   PSA_AEAD_FINISH_OUTPUT_SIZE(key_type, alg) : 1];
+    size_t fin_ct_len = 0;
+    psa_aead_operation_t op = psa_aead_operation_init();
+    psa_status_t st;
+    size_t off;
+
+    st = psa_aead_encrypt(key_id, alg, nonce, nonce_len, aad, aad_len,
+                          pt, pt_len, ref, sizeof(ref), &ref_len);
+    if (st != PSA_SUCCESS) {
+        check_status(st, "inplace: oneshot reference");
+        return;
+    }
+
+    memcpy(buf, pt, pt_len);
+    st = psa_aead_encrypt_setup(&op, key_id, alg);
+    check_status(st, "inplace: encrypt_setup");
+    if (st != PSA_SUCCESS) {
+        return;
+    }
+    st = psa_aead_set_lengths(&op, aad_len, pt_len);
+    check_status(st, "inplace: set_lengths");
+    if (st != PSA_SUCCESS) {
+        psa_aead_abort(&op);
+        return;
+    }
+    st = psa_aead_set_nonce(&op, nonce, nonce_len);
+    check_status(st, "inplace: set_nonce");
+    if (st != PSA_SUCCESS) {
+        psa_aead_abort(&op);
+        return;
+    }
+    st = psa_aead_update_ad(&op, aad, aad_len);
+    check_status(st, "inplace: update_ad");
+    if (st != PSA_SUCCESS) {
+        psa_aead_abort(&op);
+        return;
+    }
+
+    /* Small chunks force several CBC-MAC blocks; in == out throughout. */
+    for (off = 0; off < pt_len; off += 5) {
+        size_t n = (pt_len - off < 5) ? (pt_len - off) : 5;
+        size_t out_len = 0;
+
+        st = psa_aead_update(&op, buf + off, n, buf + off,
+                             (size_t)(sizeof(buf) - off), &out_len);
+        check_status(st, "inplace: update (in == out)");
+        if (st != PSA_SUCCESS) {
+            psa_aead_abort(&op);
+            return;
+        }
+        if (out_len != n) {
+            check(0, "inplace: update length mismatch");
+            psa_aead_abort(&op);
+            return;
+        }
+    }
+
+    st = psa_aead_finish(&op, fin_ct, sizeof(fin_ct), &fin_ct_len,
+                         tag, sizeof(tag), &tag_len);
+    check_status(st, "inplace: finish");
+    if (st != PSA_SUCCESS) {
+        psa_aead_abort(&op);
+        return;
+    }
+    psa_aead_abort(&op);
+
+    check(tag_len == ref_len - pt_len, "inplace: tag length");
+    check(memcmp(buf, ref, pt_len) == 0,
+          "inplace: ciphertext matches reference");
+    if (tag_len == ref_len - pt_len && tag_len > 0) {
+        check(memcmp(tag, ref + pt_len, tag_len) == 0,
+              "inplace: tag matches reference");
+    }
+}
+
 static int run_algo(const char *name, psa_algorithm_t alg, int is_ccm,
                     psa_key_type_t key_type, size_t key_len,
                     size_t nonce_len, size_t aad_len,
@@ -282,6 +374,11 @@ static int run_algo(const char *name, psa_algorithm_t alg, int is_ccm,
         test_multipart_decrypt(key_id, alg, is_ccm, key_type, key_bits,
                                nonce, nonce_len, aad, aad_len, ct, ct_len,
                                chunks[i]);
+    }
+
+    if (is_ccm) {
+        test_inplace_ccm(key_id, alg, key_type, nonce, nonce_len, aad,
+                         aad_len, pt, pt_len);
     }
 
     psa_destroy_key(key_id);

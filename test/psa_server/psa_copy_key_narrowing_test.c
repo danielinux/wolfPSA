@@ -6,6 +6,12 @@
  * to an HMAC(SHA_256) destination) instead of requiring exact algorithm
  * equality, which rejected that valid copy.
  *
+ * Per the PSA spec the copy must conform to both policies: when one side is
+ * the inclusive wildcard of the other's concrete algorithm, the copy is
+ * accepted and the stored policy is the concrete one. The second test
+ * covers the inverse direction (concrete source, wildcard destination) and
+ * asserts the stored policy is concrete.
+ *
  * Copyright (C) 2026 wolfSSL Inc.
  */
 
@@ -71,9 +77,10 @@ static int test_wildcard_to_concrete_narrowing(void)
     return ret;
 }
 
-/* A concrete source must still be rejected when the destination widens to a
- * wildcard (no common concrete permitted algorithm in that direction). */
-static int test_concrete_to_wildcard_rejected(void)
+/* Concrete source, wildcard destination: the copy must succeed and the
+ * stored policy must be the concrete algorithm (the wildcard would permit
+ * more than the source policy allows). */
+static int test_concrete_to_wildcard_stores_concrete(void)
 {
     static const uint8_t key[32] = {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
@@ -104,7 +111,8 @@ static int test_concrete_to_wildcard_rejected(void)
         return 1;
     }
 
-    /* Destination: wildcard HMAC(ANY_HASH) - a widening, not a narrowing. */
+    /* Destination: wildcard HMAC(ANY_HASH) - the inclusive wildcard of the
+     * source's concrete algorithm. */
     psa_set_key_type(&dst_attrs, PSA_KEY_TYPE_HMAC);
     psa_set_key_bits(&dst_attrs, (size_t)sizeof(key) * 8u);
     psa_set_key_usage_flags(&dst_attrs,
@@ -114,15 +122,37 @@ static int test_concrete_to_wildcard_rejected(void)
     psa_set_key_algorithm(&dst_attrs, PSA_ALG_HMAC(PSA_ALG_ANY_HASH));
     psa_set_key_lifetime(&dst_attrs, PSA_KEY_LIFETIME_VOLATILE);
     st = psa_copy_key(src_key, &dst_attrs, &copy_key);
-    if (st == PSA_SUCCESS) {
-        printf("PASS widen: concrete -> wildcard copy allowed (shared "
-               "permitted algorithm)\n");
+    if (st != PSA_SUCCESS) {
+        printf("FAIL widen: psa_copy_key(SHA_256 -> ANY_HASH) status=%d "
+               "(expected SUCCESS)\n", (int)st);
+        ret = 1;
+    }
+    else   {
+        psa_key_attributes_t copy_attrs = psa_key_attributes_init();
+        psa_algorithm_t copy_alg;
+
+        st = psa_get_key_attributes(copy_key, &copy_attrs);
+        if (st != PSA_SUCCESS) {
+            printf("FAIL widen: psa_get_key_attributes status=%d\n",
+                   (int)st);
+            ret = 1;
+        }
+        else {
+            copy_alg = psa_get_key_algorithm(&copy_attrs);
+            if (copy_alg != PSA_ALG_HMAC(PSA_ALG_SHA_256)) {
+                printf("FAIL widen: copied policy algorithm=0x%08x "
+                       "(expected concrete HMAC(SHA_256))\n",
+                       (unsigned)copy_alg);
+                ret = 1;
+            }
+            else {
+                printf("PASS widen: concrete -> wildcard copy accepted, "
+                       "concrete policy stored\n");
+            }
+        }
         if (copy_key != 0) {
             psa_destroy_key(copy_key);
         }
-    } else   {
-        printf("PASS widen: concrete -> wildcard copy rejected status=%d\n",
-               (int)st);
     }
 
     psa_destroy_key(src_key);
@@ -141,7 +171,7 @@ int main(void)
     if (test_wildcard_to_concrete_narrowing() != 0) {
         ret = 1;
     }
-    if (test_concrete_to_wildcard_rejected() != 0) {
+    if (test_concrete_to_wildcard_stores_concrete() != 0) {
         ret = 1;
     }
 
