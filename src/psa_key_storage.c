@@ -2268,7 +2268,10 @@ static int wolfpsa_alg_compatible(psa_algorithm_t src_alg,
         if (dst_hash == 0) {
             dst_hash = PSA_ALG_HMAC_GET_HASH(dst_alg);
         }
-        if ((src_hash == PSA_ALG_ANY_HASH || dst_hash == PSA_ALG_ANY_HASH) &&
+        /* PSA_ALG_NONE is not a hash algorithm: raw sign forms such as
+         * RSA_PKCS1V15_SIGN_RAW are not members of ANY_HASH. */
+        if ((src_hash != PSA_ALG_NONE && dst_hash != PSA_ALG_NONE) &&
+            (src_hash == PSA_ALG_ANY_HASH || dst_hash == PSA_ALG_ANY_HASH) &&
             src_hash != dst_hash) {
             ok = 1;
         }

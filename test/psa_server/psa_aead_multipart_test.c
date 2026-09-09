@@ -241,6 +241,88 @@ static void test_multipart_decrypt(psa_key_id_t key_id, psa_algorithm_t alg,
     }
 }
 
+/* Streaming decrypt with a corrupted tag must fail with
+ * PSA_ERROR_INVALID_SIGNATURE: the streaming CCM tag comparison, the
+ * ChaCha20-Poly1305 CheckTag failure, and the GCM DecryptFinal
+ * authentication failure must all reject a flipped tag. */
+static void test_multipart_decrypt_bad_tag(psa_key_id_t key_id,
+                                           psa_algorithm_t alg, int is_ccm,
+                                           psa_key_type_t key_type,
+                                           size_t key_bits,
+                                           const uint8_t *nonce,
+                                           size_t nonce_len,
+                                           const uint8_t *aad, size_t aad_len,
+                                           const uint8_t *ct, size_t ct_len)
+{
+    psa_aead_operation_t op = psa_aead_operation_init();
+    psa_status_t st;
+    size_t tag_len;
+    size_t off;
+    size_t n;
+    size_t out_len = 0;
+    size_t ver_size;
+    size_t ver_pt_len = 0;
+    uint8_t bad_tag[PSA_AEAD_TAG_MAX_SIZE];
+    uint8_t out[PSA_AEAD_UPDATE_OUTPUT_SIZE(key_type, alg, 64)];
+    uint8_t ver_pt[PSA_BLOCK_CIPHER_BLOCK_MAX_SIZE];
+
+    tag_len = PSA_AEAD_TAG_LENGTH(key_type, key_bits, alg);
+    if (tag_len == 0 || ct_len < tag_len) {
+        check(0, "bad tag: no tag in reference");
+        return;
+    }
+
+    ver_size = PSA_AEAD_VERIFY_OUTPUT_SIZE(key_type, alg);
+
+    st = psa_aead_decrypt_setup(&op, key_id, alg);
+    check_status(st, "bad tag: decrypt_setup");
+    if (st != PSA_SUCCESS) {
+        return;
+    }
+    if (is_ccm) {
+        st = psa_aead_set_lengths(&op, aad_len, ct_len - tag_len);
+        check_status(st, "bad tag: set_lengths");
+        if (st != PSA_SUCCESS) {
+            psa_aead_abort(&op);
+            return;
+        }
+    }
+    st = psa_aead_set_nonce(&op, nonce, nonce_len);
+    check_status(st, "bad tag: set_nonce");
+    if (st != PSA_SUCCESS) {
+        psa_aead_abort(&op);
+        return;
+    }
+    st = psa_aead_update_ad(&op, aad, aad_len);
+    check_status(st, "bad tag: update_ad");
+    if (st != PSA_SUCCESS) {
+        psa_aead_abort(&op);
+        return;
+    }
+
+    for (off = 0; off < ct_len - tag_len; off += 16) {
+        n = (ct_len - tag_len - off < 16) ?
+            (ct_len - tag_len - off) : 16;
+        st = psa_aead_update(&op, ct + off, n, out, sizeof(out), &out_len);
+        check_status(st, "bad tag: update");
+        if (st != PSA_SUCCESS) {
+            psa_aead_abort(&op);
+            return;
+        }
+    }
+
+    memcpy(bad_tag, ct + ct_len - tag_len, tag_len);
+    bad_tag[0] ^= 0x01;
+    st = psa_aead_verify(&op, ver_pt, ver_size, &ver_pt_len,
+                         bad_tag, tag_len);
+    if (st != PSA_ERROR_INVALID_SIGNATURE) {
+        printf("  FAIL: bad tag verify -> status %d (expected %d)\n",
+               (int)st, (int)PSA_ERROR_INVALID_SIGNATURE);
+        g_failures++;
+    }
+    psa_aead_abort(&op);
+}
+
 /* In-place streaming CCM: psa_aead_update() with in == out must produce
  * the same ciphertext and tag as non-overlapping buffers (PSA spec: 
  * overlapping input and output buffers give the same result). Before the
@@ -375,6 +457,9 @@ static int run_algo(const char *name, psa_algorithm_t alg, int is_ccm,
                                nonce, nonce_len, aad, aad_len, ct, ct_len,
                                chunks[i]);
     }
+
+    test_multipart_decrypt_bad_tag(key_id, alg, is_ccm, key_type, key_bits,
+                                   nonce, nonce_len, aad, aad_len, ct, ct_len);
 
     if (is_ccm) {
         test_inplace_ccm(key_id, alg, key_type, nonce, nonce_len, aad,

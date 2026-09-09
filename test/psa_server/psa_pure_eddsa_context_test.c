@@ -5,7 +5,9 @@
  * PSA_ALG_EDDSA_CTX.
  *
  * PSA_ALG_PURE_EDDSA is a sign-message algorithm, so the context cases are
- * exercised through psa_sign_message_with_context().
+ * exercised through psa_sign_message_with_context() and
+ * psa_verify_message_with_context() (the Ed448 backend enforces the
+ * rejection on both the sign and the verify path).
  *
  * Standalone regression test. Build:
  *   gcc -o /tmp/psa_pure_eddsa_context_test \
@@ -36,7 +38,9 @@ static int test_pure_eddsa_rejects_context(void)
     psa_set_key_type(&attrs,
                      PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_TWISTED_EDWARDS));
     psa_set_key_bits(&attrs, 448);
-    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_SIGN_MESSAGE);
+    psa_set_key_usage_flags(&attrs,
+                            PSA_KEY_USAGE_SIGN_MESSAGE |
+                            PSA_KEY_USAGE_VERIFY_MESSAGE);
     psa_set_key_algorithm(&attrs, PSA_ALG_PURE_EDDSA);
     psa_set_key_lifetime(&attrs, PSA_KEY_LIFETIME_VOLATILE);
 
@@ -62,7 +66,8 @@ static int test_pure_eddsa_rejects_context(void)
         printf("PASS pure_eddsa non-empty context rejected\n");
     }
 
-    /* A zero-length context is still accepted (PureEdDSA with no context). */
+    /* A zero-length context is still accepted (PureEdDSA with no context),
+     * and the resulting signature verifies with the same empty context. */
     st = psa_sign_message_with_context(key_id, PSA_ALG_PURE_EDDSA,
                                        message, sizeof(message),
                                        context, 0,
@@ -72,9 +77,40 @@ static int test_pure_eddsa_rejects_context(void)
         printf("FAIL pure_eddsa zero context: expected PSA_SUCCESS, got %d\n",
                (int)st);
         rc = 1;
-    } else   {
+    }
+    else   {
         printf("PASS pure_eddsa zero context accepted (sig %zu bytes)\n",
                signature_length);
+
+        st = psa_verify_message_with_context(key_id, PSA_ALG_PURE_EDDSA,
+                                             message, sizeof(message),
+                                             context, 0,
+                                             signature, signature_length);
+        if (st != PSA_SUCCESS) {
+            printf("FAIL pure_eddsa zero-context verify: expected "
+                   "PSA_SUCCESS, got %d\n", (int)st);
+            rc = 1;
+        }
+        else   {
+            printf("PASS pure_eddsa zero-context verify\n");
+        }
+
+        /* Verification is context-free too: a non-empty context must be
+         * rejected with PSA_ERROR_INVALID_ARGUMENT. */
+        st = psa_verify_message_with_context(key_id, PSA_ALG_PURE_EDDSA,
+                                             message, sizeof(message),
+                                             context,
+                                             sizeof(context) - 1,
+                                             signature, signature_length);
+        if (st != PSA_ERROR_INVALID_ARGUMENT) {
+            printf("FAIL pure_eddsa non-empty context verify: expected "
+                   "PSA_ERROR_INVALID_ARGUMENT (%d), got %d\n",
+                   (int)PSA_ERROR_INVALID_ARGUMENT, (int)st);
+            rc = 1;
+        }
+        else   {
+            printf("PASS pure_eddsa non-empty context verify rejected\n");
+        }
     }
 
     psa_destroy_key(key_id);

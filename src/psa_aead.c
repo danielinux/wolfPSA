@@ -234,12 +234,16 @@ static psa_status_t wolfpsa_aead_setup(psa_aead_operation_t *operation,
     if ((alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) != 0) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
-#ifndef HAVE_AESGCM
+    /* Multipart GCM streams through the wolfCrypt GCM streaming API, which
+     * only exists with WOLFSSL_AESGCM_STREAM; one-shot GCM does not need it. */
+#if !defined(HAVE_AESGCM) || !defined(WOLFSSL_AESGCM_STREAM)
     if (PSA_ALG_AEAD_EQUAL(alg, PSA_ALG_GCM)) {
         return PSA_ERROR_NOT_SUPPORTED;
     }
 #endif
-#ifndef HAVE_AESCCM
+    /* Multipart CCM streams through the AES-direct block API, which only
+     * exists with WOLFSSL_AES_DIRECT; one-shot CCM does not need it. */
+#if !defined(HAVE_AESCCM) || !defined(WOLFSSL_AES_DIRECT)
     if (PSA_ALG_AEAD_EQUAL(alg, PSA_ALG_CCM)) {
         return PSA_ERROR_NOT_SUPPORTED;
     }
@@ -493,7 +497,7 @@ psa_status_t psa_aead_update_ad(psa_aead_operation_t *operation,
     return status;
 }
 
-#ifdef HAVE_AESCCM
+#if defined(HAVE_AESCCM) && defined(WOLFSSL_AES_DIRECT)
 /* Big-endian increment of the last lenSz bytes of a CCM counter block. */
 static void wolfpsa_aead_ccm_ctr_inc(uint8_t *ctr, size_t lenSz)
 {
@@ -719,7 +723,7 @@ static psa_status_t wolfpsa_aead_ccm_finish(wolfpsa_aead_ctx_t *ctx,
 
     return PSA_SUCCESS;
 }
-#endif /* HAVE_AESCCM */
+#endif /* HAVE_AESCCM && WOLFSSL_AES_DIRECT */
 
 /* Stream one update() chunk through the per-algorithm streaming primitive.
  * On the first call the algorithm context is initialised and the AAD is fed
@@ -798,7 +802,7 @@ static psa_status_t wolfpsa_aead_stream_update(wolfpsa_aead_ctx_t *ctx,
 #endif
     }
     else if (PSA_ALG_AEAD_EQUAL(ctx->alg, PSA_ALG_CCM)) {
-#ifdef HAVE_AESCCM
+#if defined(HAVE_AESCCM) && defined(WOLFSSL_AES_DIRECT)
         if (first) {
             ret = wolfpsa_aead_ccm_init(ctx);
             if (ret != PSA_SUCCESS) {
@@ -857,7 +861,7 @@ static psa_status_t wolfpsa_aead_stream_final(wolfpsa_aead_ctx_t *ctx,
 #endif
     }
     else if (PSA_ALG_AEAD_EQUAL(ctx->alg, PSA_ALG_CCM)) {
-#ifdef HAVE_AESCCM
+#if defined(HAVE_AESCCM) && defined(WOLFSSL_AES_DIRECT)
         if (ctx->direction) {
             return wolfpsa_aead_ccm_finish(ctx, tag, tag_len);
         }
