@@ -2246,6 +2246,39 @@ psa_status_t psa_purge_key(psa_key_id_t key)
     return status;
 }
 
+/* Return 1 if src_alg and dst_alg share a permitted algorithm: they are
+ * equal, or (same base family, both hash-and-sign or both HMAC) one is a
+ * wildcard (ANY_HASH) and the other is a concrete algorithm. */
+static int wolfpsa_alg_compatible(psa_algorithm_t src_alg,
+                                  psa_algorithm_t dst_alg)
+{
+    int ok = 0;
+    psa_algorithm_t src_hash;
+    psa_algorithm_t dst_hash;
+
+    if (src_alg == dst_alg) {
+        ok = 1;
+    }
+    else if ((src_alg & ~PSA_ALG_HASH_MASK) == (dst_alg & ~PSA_ALG_HASH_MASK) &&
+             ((PSA_ALG_IS_SIGN_HASH(src_alg) && PSA_ALG_IS_SIGN_HASH(dst_alg)) ||
+              (PSA_ALG_IS_HMAC(src_alg) && PSA_ALG_IS_HMAC(dst_alg)))) {
+        src_hash = PSA_ALG_SIGN_GET_HASH(src_alg);
+        if (src_hash == 0) {
+            src_hash = PSA_ALG_HMAC_GET_HASH(src_alg);
+        }
+        dst_hash = PSA_ALG_SIGN_GET_HASH(dst_alg);
+        if (dst_hash == 0) {
+            dst_hash = PSA_ALG_HMAC_GET_HASH(dst_alg);
+        }
+        if ((src_hash == PSA_ALG_ANY_HASH || dst_hash == PSA_ALG_ANY_HASH) &&
+            src_hash != dst_hash) {
+            ok = 1;
+        }
+    }
+
+    return ok;
+}
+
 /* Copy a key in the PSA key storage */
 psa_status_t psa_copy_key(
     psa_key_id_t source_key,
@@ -2301,7 +2334,8 @@ psa_status_t psa_copy_key(
                 return PSA_ERROR_INVALID_ARGUMENT;
             }
 
-            if (attributes->policy.alg != psa_get_key_algorithm(&vol_attr)) {
+            if (!wolfpsa_alg_compatible(psa_get_key_algorithm(&vol_attr),
+                                        attributes->policy.alg)) {
                 wolfpsa_forcezero_free_key_data(key_data, key_data_length);
                 return PSA_ERROR_INVALID_ARGUMENT;
             }
@@ -2368,7 +2402,8 @@ psa_status_t psa_copy_key(
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
-    if (attributes->policy.alg != psa_get_key_algorithm(&src_attr)) {
+    if (!wolfpsa_alg_compatible(psa_get_key_algorithm(&src_attr),
+                                attributes->policy.alg)) {
         wolfPSA_Store_Close(store);
         return PSA_ERROR_INVALID_ARGUMENT;
     }
