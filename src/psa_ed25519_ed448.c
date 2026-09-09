@@ -457,8 +457,12 @@ psa_status_t psa_asymmetric_sign_ed448(psa_key_type_t key_type,
     }
 
     if (alg == PSA_ALG_PURE_EDDSA) {
-        /* PSA_ALG_PURE_EDDSA is context-free; ignore any context. Only
-         * EDDSA_CTX and ED448PH carry a context string. */
+        /* PureEdDSA is context-free; a non-empty context is rejected
+         * (defense-in-depth: the API path enforces this in
+         * wolfpsa_check_context()). */
+        if (context_length != 0) {
+            return PSA_ERROR_INVALID_ARGUMENT;
+        }
         ctx_ptr = NULL;
         ctx_len = 0;
     }
@@ -559,8 +563,12 @@ psa_status_t psa_asymmetric_verify_ed448(psa_key_type_t key_type,
     }
 
     if (alg == PSA_ALG_PURE_EDDSA) {
-        /* PSA_ALG_PURE_EDDSA is context-free; ignore any context. Only
-         * EDDSA_CTX and ED448PH carry a context string. */
+        /* PureEdDSA is context-free; a non-empty context is rejected
+         * (defense-in-depth: the API path enforces this in
+         * wolfpsa_check_context()). */
+        if (context_length != 0) {
+            return PSA_ERROR_INVALID_ARGUMENT;
+        }
         ctx_ptr = NULL;
         ctx_len = 0;
     }
