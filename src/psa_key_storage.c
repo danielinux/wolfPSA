@@ -945,6 +945,11 @@ psa_status_t wolfpsa_get_key_data(psa_key_id_t key_id,
     if (status == PSA_SUCCESS) {
         return PSA_SUCCESS;
     }
+    if (status != PSA_ERROR_INVALID_HANDLE) {
+        /* A volatile lookup failure (insufficient memory, invalid data) must
+         * be reported, not masked by the persistent-store probe below. */
+        return status;
+    }
 
     attr_length = sizeof(psa_key_type_t) + sizeof(psa_key_bits_t) +
                   sizeof(psa_key_usage_t) + sizeof(psa_algorithm_t) +
@@ -1732,7 +1737,12 @@ psa_status_t psa_export_key(
             return PSA_SUCCESS;
         }
     }
-    
+    if (status != PSA_ERROR_INVALID_HANDLE) {
+        /* A volatile lookup failure must be reported, not masked by the
+         * persistent-store probe below. */
+        return status;
+    }
+
     /* Get key info */
     psa_key_attributes_t attributes;
     status = psa_get_key_attributes(key_id, &attributes);
@@ -1833,6 +1843,9 @@ psa_status_t psa_export_public_key(
             attributes = vol_attr;
             key_data_length = vol_len;
             use_volatile = 1;
+        }
+        else if (status != PSA_ERROR_INVALID_HANDLE) {
+            return status;
         }
         else {
             status = psa_get_key_attributes(key_id, &attributes);
@@ -2309,7 +2322,12 @@ psa_status_t psa_copy_key(
             return status;
         }
     }
-    
+    if (status != PSA_ERROR_INVALID_HANDLE) {
+        /* A volatile lookup failure must be reported, not masked by the
+         * persistent-store probe below. */
+        return status;
+    }
+
     /* Calculate attribute length */
     attr_length = sizeof(psa_key_type_t) + sizeof(psa_key_bits_t) +
                  sizeof(psa_key_usage_t) + sizeof(psa_algorithm_t) +
