@@ -26,6 +26,11 @@
 
 #include <wolfpsa/psa/crypto.h>
 
+#include <wolfssl/wolfcrypt/aes.h>
+#if defined(HAVE_CHACHA) && defined(HAVE_POLY1305)
+#include <wolfssl/wolfcrypt/chacha20_poly1305.h>
+#endif
+
 typedef struct wolfpsa_aead_ctx {
     psa_algorithm_t alg;
     psa_key_type_t key_type;
@@ -43,6 +48,33 @@ typedef struct wolfpsa_aead_ctx {
     size_t plaintext_expected;
     size_t tag_length;
     int lengths_set;
+
+    /* Streaming state. Used when psa_aead_update() is called with a non-NULL
+     * output: the payload is emitted from update() and only the tag (or, for
+     * block-cipher AEAD, nothing) is left for finish()/verify(). The one-shot
+     * path (update() with NULL output) buffers into input and leaves these
+     * unused. */
+    int streaming;
+#ifdef HAVE_AESGCM
+    Aes gcm;
+#endif
+#if defined(HAVE_CHACHA) && defined(HAVE_POLY1305)
+    ChaChaPoly_Aead chacha;
+#endif
+#ifdef HAVE_AESCCM
+    /* Hand-rolled streaming CCM (wolfCrypt has no streaming CCM API): a CTR
+     * for the ciphertext plus a running CBC-MAC for the tag. */
+    Aes ccm_aes;
+    uint8_t ccm_ctr[16];
+    uint8_t ccm_mac[16];
+    uint8_t ccm_mblk[16];
+    size_t ccm_mfill;
+    uint8_t ccm_ks[16];
+    size_t ccm_ks_off;
+    size_t ccm_lenSz;
+    size_t ccm_tag_len;
+    int ccm_ks_valid;
+#endif
 } wolfpsa_aead_ctx_t;
 
 static inline wolfpsa_aead_ctx_t*

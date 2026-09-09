@@ -3355,7 +3355,7 @@ static int test_aead_gcm_multipart_zero_length_inputs(void)
         ret = TEST_FAIL;
         goto cleanup;
     }
-    if (check_true(update_len == 0, "psa_aead_update(GCM zero aad) length") != TEST_OK) {
+    if (check_true(update_len == sizeof(plaintext), "psa_aead_update(GCM zero aad) length") != TEST_OK) {
         ret = TEST_FAIL;
         goto cleanup;
     }
@@ -3365,7 +3365,7 @@ static int test_aead_gcm_multipart_zero_length_inputs(void)
         ret = TEST_FAIL;
         goto cleanup;
     }
-    if (check_true(ciphertext_len == sizeof(ciphertext), "psa_aead_finish(GCM zero aad) length") != TEST_OK) {
+    if (check_true(ciphertext_len == 0, "psa_aead_finish(GCM zero aad) length") != TEST_OK) {
         ret = TEST_FAIL;
         goto cleanup;
     }
@@ -3373,13 +3373,13 @@ static int test_aead_gcm_multipart_zero_length_inputs(void)
         ret = TEST_FAIL;
         goto cleanup;
     }
-    if (check_buf_eq("psa_aead_finish(GCM zero aad) ciphertext matches reference)",
-                     ciphertext, combined, sizeof(ciphertext)) != TEST_OK) {
+    if (check_buf_eq("psa_aead_update(GCM zero aad) ciphertext matches reference)",
+                     update_out, combined, sizeof(plaintext)) != TEST_OK) {
         ret = TEST_FAIL;
         goto cleanup;
     }
     if (check_buf_eq("psa_aead_finish(GCM zero aad) tag matches reference)",
-                     tag, combined + sizeof(ciphertext), sizeof(tag)) != TEST_OK) {
+                     tag, combined + sizeof(plaintext), sizeof(tag)) != TEST_OK) {
         ret = TEST_FAIL;
         goto cleanup;
     }
@@ -3399,22 +3399,24 @@ static int test_aead_gcm_multipart_zero_length_inputs(void)
         ret = TEST_FAIL;
         goto cleanup;
     }
-    st = psa_aead_update(&op, ciphertext, ciphertext_len,
-                         update_out, sizeof(update_out), &update_len);
+    st = psa_aead_update(&op, update_out, sizeof(plaintext),
+                         decrypt_out, sizeof(decrypt_out), &plaintext_len);
     if (check_status(st, "psa_aead_update(GCM zero aad verify)") != TEST_OK) {
+        ret = TEST_FAIL;
+        goto cleanup;
+    }
+    if (check_true(plaintext_len == sizeof(plaintext),
+                   "psa_aead_update(GCM zero aad verify) length") != TEST_OK) {
+        ret = TEST_FAIL;
+        goto cleanup;
+    }
+    if (check_buf_eq("psa_aead_update(GCM zero aad verify) plaintext",
+                     decrypt_out, plaintext, sizeof(plaintext)) != TEST_OK) {
         ret = TEST_FAIL;
         goto cleanup;
     }
     st = psa_aead_verify(&op, decrypt_out, sizeof(decrypt_out), &plaintext_len, tag, tag_len);
     if (check_status(st, "psa_aead_verify(GCM zero aad)") != TEST_OK) {
-        ret = TEST_FAIL;
-        goto cleanup;
-    }
-    if (check_true(plaintext_len == sizeof(plaintext), "psa_aead_verify(GCM zero aad) length") != TEST_OK) {
-        ret = TEST_FAIL;
-        goto cleanup;
-    }
-    if (check_buf_eq("psa_aead_verify(GCM zero aad)", decrypt_out, plaintext, sizeof(plaintext)) != TEST_OK) {
         ret = TEST_FAIL;
         goto cleanup;
     }
