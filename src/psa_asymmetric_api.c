@@ -518,6 +518,16 @@ static psa_status_t wolfpsa_sign_hash_worker(psa_key_id_t key,
     }
 #endif /* WOLFSSL_HAVE_MLDSA */
 
+    /* The hash workers only accept SIGN_HASH algorithms (HMAC, ECDSA, RSA,
+     * Ed25519ph, Ed448ph). Message-only EdDSA (PSA_ALG_PURE_EDDSA /
+     * PSA_ALG_EDDSA_CTX) is not a hash algorithm; the Ed25519/Ed448
+     * helpers would interpret the hash buffer as a raw message. MLDSA is
+     * handled above (it returns before reaching this check). */
+    if (!PSA_ALG_IS_SIGN_HASH(alg)) {
+        wolfpsa_forcezero_free_key_data(key_data, key_data_length);
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+
 #if defined(WOLFSSL_HAVE_LMS)
     if (attributes.type == PSA_KEY_TYPE_LMS_PUBLIC_KEY ||
         attributes.type == PSA_KEY_TYPE_HSS_PUBLIC_KEY) {
@@ -639,6 +649,16 @@ static psa_status_t wolfpsa_verify_hash_worker(psa_key_id_t key,
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 #endif /* WOLFSSL_HAVE_MLDSA */
+
+    /* The hash workers only accept SIGN_HASH algorithms (HMAC, ECDSA, RSA,
+     * Ed25519ph, Ed448ph). Message-only EdDSA (PSA_ALG_PURE_EDDSA /
+     * PSA_ALG_EDDSA_CTX) is not a hash algorithm; the Ed25519/Ed448
+     * helpers would interpret the hash buffer as a raw message. MLDSA is
+     * handled above (it returns before reaching this check). */
+    if (!PSA_ALG_IS_SIGN_HASH(alg)) {
+        wolfpsa_forcezero_free_key_data(key_data, key_data_length);
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
 
 #if defined(WOLFSSL_HAVE_LMS)
     if (attributes.type == PSA_KEY_TYPE_LMS_PUBLIC_KEY ||
