@@ -2258,20 +2258,16 @@ static int wolfpsa_alg_compatible(psa_algorithm_t src_alg,
         ok = 1;
     }
     else if ((src_alg & ~PSA_ALG_HASH_MASK) == (dst_alg & ~PSA_ALG_HASH_MASK) &&
-             ((PSA_ALG_IS_SIGN_HASH(src_alg) && PSA_ALG_IS_SIGN_HASH(dst_alg)) ||
-              (PSA_ALG_IS_HMAC(src_alg) && PSA_ALG_IS_HMAC(dst_alg)))) {
-        src_hash = PSA_ALG_SIGN_GET_HASH(src_alg);
-        if (src_hash == 0) {
-            src_hash = PSA_ALG_HMAC_GET_HASH(src_alg);
-        }
-        dst_hash = PSA_ALG_SIGN_GET_HASH(dst_alg);
-        if (dst_hash == 0) {
-            dst_hash = PSA_ALG_HMAC_GET_HASH(dst_alg);
-        }
-        /* PSA_ALG_NONE is not a hash algorithm: raw sign forms such as
-         * RSA_PKCS1V15_SIGN_RAW are not members of ANY_HASH. */
-        if ((src_hash != PSA_ALG_NONE && dst_hash != PSA_ALG_NONE) &&
-            (src_hash == PSA_ALG_ANY_HASH || dst_hash == PSA_ALG_ANY_HASH) &&
+             PSA_ALG_IS_SIGN_HASH(src_alg) && PSA_ALG_IS_SIGN_HASH(dst_alg)) {
+        src_hash = PSA_ALG_GET_HASH(src_alg);
+        dst_hash = PSA_ALG_GET_HASH(dst_alg);
+        /* PSA_ALG_ANY_HASH is a signature-scheme wildcard in the PSA
+         * supported key policies: it narrows to any concrete hash of the
+         * same base family, mirroring wolfpsa_sign_alg_permitted().
+         * HMAC(ANY_HASH) is not a valid policy, and a zero hash field
+         * (raw sign forms, PSA_ALG_ECDSA_ANY) is not a member of
+         * ANY_HASH. */
+        if ((src_hash == PSA_ALG_ANY_HASH || dst_hash == PSA_ALG_ANY_HASH) &&
             src_hash != dst_hash) {
             ok = 1;
         }
@@ -2282,18 +2278,15 @@ static int wolfpsa_alg_compatible(psa_algorithm_t src_alg,
 
 /* A copy must conform to both policies (PSA Crypto API): when the
  * destination policy is the inclusive ANY_HASH wildcard of the source's
- * concrete algorithm, the stored policy is the concrete one.
+ * concrete signature algorithm, the stored policy is the concrete one.
  * wolfpsa_alg_compatible() already rejected every pair with no common
  * algorithm, so the other direction (concrete dst, wildcard src) keeps the
  * destination's concrete policy. */
 static psa_algorithm_t wolfpsa_copy_key_policy_alg(psa_algorithm_t src_alg,
                                                   psa_algorithm_t dst_alg)
 {
-    if (dst_alg != src_alg &&
-        ((PSA_ALG_IS_SIGN_HASH(dst_alg) &&
-          PSA_ALG_SIGN_GET_HASH(dst_alg) == PSA_ALG_ANY_HASH) ||
-         (PSA_ALG_IS_HMAC(dst_alg) &&
-          PSA_ALG_HMAC_GET_HASH(dst_alg) == PSA_ALG_ANY_HASH))) {
+    if (dst_alg != src_alg && PSA_ALG_IS_SIGN_HASH(dst_alg) &&
+        PSA_ALG_GET_HASH(dst_alg) == PSA_ALG_ANY_HASH) {
         return src_alg;
     }
     return dst_alg;
