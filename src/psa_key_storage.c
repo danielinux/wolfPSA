@@ -232,6 +232,20 @@ static psa_status_t wolfpsa_validate_stored_key_data_length(size_t key_data_leng
     return PSA_SUCCESS;
 }
 
+/* Map a failing wolfPSA_Store_Open()/wolfPSA_Store_OpenSz() return onto a PSA
+ * status. A store context allocation failure (MEMORY_E) is runtime memory
+ * exhaustion, not a loss of keystore integrity, so it must not be reported as
+ * PSA_ERROR_STORAGE_FAILURE. Callers handle WOLFPSA_STORE_NOT_AVAILABLE (the
+ * record is absent) themselves. */
+static psa_status_t wolfpsa_store_open_status(int ret)
+{
+    if (ret == MEMORY_E) {
+        return PSA_ERROR_INSUFFICIENT_MEMORY;
+    }
+
+    return PSA_ERROR_STORAGE_FAILURE;
+}
+
 static psa_key_bits_t wolfpsa_ecc_bits_from_length(psa_ecc_family_t family,
                                                    size_t length_bytes)
 {
@@ -960,7 +974,7 @@ psa_status_t wolfpsa_get_key_data(psa_key_id_t key_id,
         return PSA_ERROR_INVALID_HANDLE;
     }
     if (ret != 0) {
-        return PSA_ERROR_STORAGE_FAILURE;
+        return wolfpsa_store_open_status(ret);
     }
 
     ret = wolfPSA_Store_Read(store, header, (int)(attr_length + sizeof(size_t)));
@@ -1348,14 +1362,15 @@ psa_status_t psa_import_key(
             return PSA_ERROR_ALREADY_EXISTS;
         }
         if (ret != WOLFPSA_STORE_NOT_AVAILABLE) {
-            /* The probe failed for a reason other than "not found" (e.g. an
-             * I/O error): do not proceed to the write path, which would
-             * overwrite a record we could not inspect. */
+            /* The probe failed for a reason other than "not found" (an I/O
+             * error, or a failed context allocation): do not proceed to the
+             * write path, which would overwrite a record we could not
+             * inspect. */
             WOLFPSA_UNLOCK();
             wc_ForceZero(buffer, buffer_size);
             XFREE(buffer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
             *key_id = PSA_KEY_ID_NULL;
-            return PSA_ERROR_STORAGE_FAILURE;
+            return wolfpsa_store_open_status(ret);
         }
 
         /* Open and write key to persistent storage */
@@ -1379,7 +1394,14 @@ psa_status_t psa_import_key(
         return status;
     }
     
-    if (ret < 0 || (size_t)ret != (attr_length + sizeof(size_t) + data_length)) {
+    if (ret < 0) {
+        /* The write path failed: a store context allocation failure is
+         * reported as such, anything else as a storage failure. */
+        *key_id = PSA_KEY_ID_NULL;
+        return wolfpsa_store_open_status(ret);
+    }
+
+    if ((size_t)ret != (attr_length + sizeof(size_t) + data_length)) {
         *key_id = PSA_KEY_ID_NULL;
         return PSA_ERROR_STORAGE_FAILURE;
     }
@@ -1682,7 +1704,7 @@ psa_status_t psa_destroy_key(psa_key_id_t key_id)
         return PSA_ERROR_INVALID_HANDLE;
     }
     if (ret != 0) {
-        return PSA_ERROR_STORAGE_FAILURE;
+        return wolfpsa_store_open_status(ret);
     }
     
     return PSA_SUCCESS;
@@ -1754,7 +1776,7 @@ psa_status_t psa_export_key(
         return PSA_ERROR_INVALID_HANDLE;
     }
     if (ret != 0) {
-        return PSA_ERROR_STORAGE_FAILURE;
+        return wolfpsa_store_open_status(ret);
     }
 
     ret = wolfPSA_Store_Read(store, header, (int)(attr_length + sizeof(size_t)));
@@ -1878,7 +1900,7 @@ psa_status_t psa_export_public_key(
             return PSA_ERROR_INVALID_HANDLE;
         }
         if (ret != 0) {
-            return PSA_ERROR_STORAGE_FAILURE;
+            return wolfpsa_store_open_status(ret);
         }
 
         ret = wolfPSA_Store_Read(store, header,
@@ -2201,7 +2223,7 @@ psa_status_t psa_get_key_attributes(
             return PSA_ERROR_INVALID_HANDLE;
         }
         if (ret != 0) {
-            return PSA_ERROR_STORAGE_FAILURE;
+            return wolfpsa_store_open_status(ret);
         }
 
         ret = wolfPSA_Store_Read(store, buffer,
@@ -2467,7 +2489,7 @@ psa_status_t psa_copy_key(
         return PSA_ERROR_INVALID_HANDLE;
     }
     if (ret != 0) {
-        return PSA_ERROR_STORAGE_FAILURE;
+        return wolfpsa_store_open_status(ret);
     }
 
     ret = wolfPSA_Store_Read(store, header, (int)(attr_length + sizeof(size_t)));

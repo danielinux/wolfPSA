@@ -36,8 +36,13 @@
  *     value that psa_key_storage.c checks); psa_its_set() is atomic, so a failed
  *     commit leaves any prior value intact, mirroring the POSIX backend's
  *     atomic-rename-on-close semantics;
- *   - reads use psa_its_get() with an advancing offset cursor, satisfying the
- *     sequential partial reads (header then body) that psa_key_storage.c does.
+ *   - reads take a whole-object snapshot with psa_its_get() when the handle is
+ *     opened and serve the sequential partial reads (header then body) that
+ *     psa_key_storage.c does from that snapshot. ITS has no read handle, so
+ *     re-fetching per read would let a concurrent psa_its_set() at the same UID
+ *     swap the record between the authorization check and the key-data read;
+ *     the snapshot gives the immutable view the POSIX backend gets from its
+ *     open file handle.
  * The UID is the key id directly (mirrors tf-psa-crypto's non-owner
  * psa_its_identifier_of_slot(); the PSA user key-id range is 30-bit, matching
  * Zephyr's default ITS UID width).
@@ -78,7 +83,8 @@
 #include <psa/internal_trusted_storage.h>
 
 /* Per-open context. For writes, buf accumulates the object until it is
- * committed; for reads, off is the sequential cursor and len the total size. */
+ * committed; for reads, buf is the snapshot taken at open, off the sequential
+ * cursor into it and len its total size. */
 typedef struct WolfpsaZephyrStore {
     psa_storage_uid_t uid;
     unsigned char*    buf;
@@ -139,8 +145,25 @@ int wolfPSA_Store_OpenSz(int type, unsigned long id1, unsigned long id2, int rea
     XMEMSET(ctx, 0, sizeof(*ctx));
     ctx->uid = uid;
     ctx->write = (read == 0);
-    if (read) {
-        ctx->len = (size_t)info.size;
+    if (read && info.size > 0) {
+        /* Snapshot the whole record now: every read of this handle must see
+         * the same object, even if another thread replaces the UID. */
+        size_t got = 0;
+
+        ctx->buf = (unsigned char*)XMALLOC((size_t)info.size, NULL,
+            DYNAMIC_TYPE_TMP_BUFFER);
+        if (ctx->buf == NULL) {
+            XFREE(ctx, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+            return WOLFPSA_STORE_IO_ERROR;
+        }
+        st = psa_its_get(uid, 0, (size_t)info.size, ctx->buf, &got);
+        if (st != PSA_SUCCESS || got != (size_t)info.size) {
+            wc_ForceZero(ctx->buf, (size_t)info.size);
+            XFREE(ctx->buf, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+            XFREE(ctx, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+            return WOLFPSA_STORE_IO_ERROR;
+        }
+        ctx->len = got;
     }
 
     *store = ctx;
@@ -179,7 +202,8 @@ void wolfPSA_Store_Close(void* store)
 
     if (ctx != NULL) {
         if (ctx->buf != NULL) {
-            /* The write buffer holds serialized key material. */
+            /* Both the write buffer and the read snapshot hold serialized key
+             * material. */
             wc_ForceZero(ctx->buf, ctx->len);
             XFREE(ctx->buf, NULL, DYNAMIC_TYPE_TMP_BUFFER);
         }
@@ -191,20 +215,22 @@ void wolfPSA_Store_Close(void* store)
 int wolfPSA_Store_Read(void* store, unsigned char* buffer, int len)
 {
     WolfpsaZephyrStore* ctx = (WolfpsaZephyrStore*)store;
-    psa_status_t st;
-    size_t got = 0;
+    size_t got;
 
     if (ctx == NULL || ctx->write || buffer == NULL || len < 0) {
         return WOLFPSA_STORE_IO_ERROR;
     }
-    if (len == 0) {
+    if (len == 0 || ctx->buf == NULL || ctx->off >= ctx->len) {
         return 0;
     }
 
-    st = psa_its_get(ctx->uid, ctx->off, (size_t)len, buffer, &got);
-    if (st != PSA_SUCCESS) {
-        return WOLFPSA_STORE_IO_ERROR;
+    /* Serve from the snapshot taken at open, not from ITS: the record behind
+     * this UID may have been replaced since. */
+    got = ctx->len - ctx->off;
+    if (got > (size_t)len) {
+        got = (size_t)len;
     }
+    XMEMCPY(buffer, ctx->buf + ctx->off, got);
     ctx->off += got;
     return (int)got;
 }
