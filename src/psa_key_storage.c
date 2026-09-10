@@ -2244,18 +2244,53 @@ psa_status_t psa_purge_key(psa_key_id_t key)
     return status;
 }
 
-/* Return 1 if src_alg and dst_alg share a permitted algorithm: they are
- * equal, or (same base family, both hash-and-sign or both HMAC) one is a
- * wildcard (ANY_HASH) and the other is a concrete algorithm. */
-static int wolfpsa_alg_compatible(psa_algorithm_t src_alg,
-                                  psa_algorithm_t dst_alg)
+/* Return 1 if a MAC or AEAD tag of concrete_len bytes satisfies a wildcard
+ * policy that requires at least min_len bytes. A length field of 0 is the
+ * full, untruncated tag: it satisfies every minimum, and as a minimum only
+ * the full length satisfies it. */
+static int wolfpsa_tag_len_permitted(size_t concrete_len, size_t min_len)
+{
+    if (min_len == 0) {
+        return concrete_len == 0;
+    }
+    return (concrete_len == 0) || (concrete_len >= min_len);
+}
+
+/* Return the more restrictive of two wildcard minimum lengths, where 0 is
+ * the full length and therefore the longest. */
+static size_t wolfpsa_tag_len_restrict(size_t len_a, size_t len_b)
+{
+    if (len_a == 0 || len_b == 0) {
+        return 0;
+    }
+    return (len_a > len_b) ? len_a : len_b;
+}
+
+/* Compute the permitted algorithm of a copy: the intersection of the source
+ * and destination policies, stored in *alg. Returns 0 when the policies have
+ * no algorithm in common and the copy must be rejected. The policies
+ * intersect when they are equal, when one is the ANY_HASH wildcard of the
+ * other's concrete signature algorithm, or when a minimum-length MAC or
+ * minimum-tag-length AEAD wildcard admits the other algorithm of the same
+ * base family; two such length wildcards intersect in the more restrictive
+ * of the two. */
+static int wolfpsa_alg_intersect(psa_algorithm_t src_alg,
+                                 psa_algorithm_t dst_alg,
+                                 psa_algorithm_t* alg)
 {
     int ok = 0;
     psa_algorithm_t src_hash;
     psa_algorithm_t dst_hash;
     psa_algorithm_t concrete_hash;
+    size_t src_len;
+    size_t dst_len;
+    int src_wild;
+    int dst_wild;
+
+    *alg = PSA_ALG_NONE;
 
     if (src_alg == dst_alg) {
+        *alg = src_alg;
         ok = 1;
     }
     else if ((src_alg & ~PSA_ALG_HASH_MASK) == (dst_alg & ~PSA_ALG_HASH_MASK) &&
@@ -2283,26 +2318,58 @@ static int wolfpsa_alg_compatible(psa_algorithm_t src_alg,
                 ok = ((src_alg & ~PSA_ALG_HASH_MASK) ==
                       PSA_ALG_RSA_PKCS1V15_SIGN_BASE);
             }
+            if (ok) {
+                /* Keep the concrete algorithm: it is the only one both
+                 * policies allow. */
+                *alg = (src_hash == PSA_ALG_ANY_HASH) ? dst_alg : src_alg;
+            }
+        }
+    }
+    else if (PSA_ALG_IS_MAC(src_alg) && PSA_ALG_IS_MAC(dst_alg) &&
+             PSA_ALG_FULL_LENGTH_MAC(src_alg) ==
+             PSA_ALG_FULL_LENGTH_MAC(dst_alg)) {
+        src_len = PSA_MAC_TRUNCATED_LENGTH(src_alg);
+        dst_len = PSA_MAC_TRUNCATED_LENGTH(dst_alg);
+        src_wild = (src_alg & PSA_ALG_MAC_AT_LEAST_THIS_LENGTH_FLAG) != 0;
+        dst_wild = (dst_alg & PSA_ALG_MAC_AT_LEAST_THIS_LENGTH_FLAG) != 0;
+        if (src_wild && dst_wild) {
+            *alg = (psa_algorithm_t)PSA_ALG_AT_LEAST_THIS_LENGTH_MAC(src_alg,
+                       wolfpsa_tag_len_restrict(src_len, dst_len));
+            ok = 1;
+        }
+        else if (src_wild) {
+            ok = wolfpsa_tag_len_permitted(dst_len, src_len);
+            *alg = ok ? dst_alg : PSA_ALG_NONE;
+        }
+        else if (dst_wild) {
+            ok = wolfpsa_tag_len_permitted(src_len, dst_len);
+            *alg = ok ? src_alg : PSA_ALG_NONE;
+        }
+    }
+    else if (PSA_ALG_IS_AEAD(src_alg) && PSA_ALG_IS_AEAD(dst_alg) &&
+             PSA_ALG_AEAD_WITH_SHORTENED_TAG(src_alg, 0) ==
+             PSA_ALG_AEAD_WITH_SHORTENED_TAG(dst_alg, 0)) {
+        src_len = PSA_ALG_AEAD_GET_TAG_LENGTH(src_alg);
+        dst_len = PSA_ALG_AEAD_GET_TAG_LENGTH(dst_alg);
+        src_wild = (src_alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) != 0;
+        dst_wild = (dst_alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) != 0;
+        if (src_wild && dst_wild) {
+            *alg = (psa_algorithm_t)
+                   PSA_ALG_AEAD_WITH_AT_LEAST_THIS_LENGTH_TAG(src_alg,
+                       wolfpsa_tag_len_restrict(src_len, dst_len));
+            ok = 1;
+        }
+        else if (src_wild) {
+            ok = wolfpsa_tag_len_permitted(dst_len, src_len);
+            *alg = ok ? dst_alg : PSA_ALG_NONE;
+        }
+        else if (dst_wild) {
+            ok = wolfpsa_tag_len_permitted(src_len, dst_len);
+            *alg = ok ? src_alg : PSA_ALG_NONE;
         }
     }
 
     return ok;
-}
-
-/* A copy must conform to both policies (PSA Crypto API): when the
- * destination policy is the inclusive ANY_HASH wildcard of the source's
- * concrete signature algorithm, the stored policy is the concrete one.
- * wolfpsa_alg_compatible() already rejected every pair with no common
- * algorithm, so the other direction (concrete dst, wildcard src) keeps the
- * destination's concrete policy. */
-static psa_algorithm_t wolfpsa_copy_key_policy_alg(psa_algorithm_t src_alg,
-                                                  psa_algorithm_t dst_alg)
-{
-    if (dst_alg != src_alg && PSA_ALG_IS_SIGN_HASH(dst_alg) &&
-        PSA_ALG_GET_HASH(dst_alg) == PSA_ALG_ANY_HASH) {
-        return src_alg;
-    }
-    return dst_alg;
 }
 
 /* Copy a key in the PSA key storage */
@@ -2322,6 +2389,7 @@ psa_status_t psa_copy_key(
     void* store = NULL;
     psa_key_attributes_t src_attr = PSA_KEY_ATTRIBUTES_INIT;
     psa_key_attributes_t dst_attr;
+    psa_algorithm_t copy_alg = PSA_ALG_NONE;
     
     /* Check parameters */
     if (attributes == NULL || target_key == NULL) {
@@ -2360,8 +2428,8 @@ psa_status_t psa_copy_key(
                 return PSA_ERROR_INVALID_ARGUMENT;
             }
 
-            if (!wolfpsa_alg_compatible(psa_get_key_algorithm(&vol_attr),
-                                        attributes->policy.alg)) {
+            if (!wolfpsa_alg_intersect(psa_get_key_algorithm(&vol_attr),
+                                       attributes->policy.alg, &copy_alg)) {
                 wolfpsa_forcezero_free_key_data(key_data, key_data_length);
                 return PSA_ERROR_INVALID_ARGUMENT;
             }
@@ -2375,8 +2443,7 @@ psa_status_t psa_copy_key(
             dst_attr.bits = (dst_attr.bits == 0) ? vol_attr.bits : dst_attr.bits;
             dst_attr.policy.usage = psa_get_key_usage_flags(&vol_attr) &
                                     psa_get_key_usage_flags(&dst_attr);
-            dst_attr.policy.alg = wolfpsa_copy_key_policy_alg(
-                psa_get_key_algorithm(&vol_attr), dst_attr.policy.alg);
+            dst_attr.policy.alg = copy_alg;
 
             status = psa_import_key(&dst_attr, key_data,
                                     key_data_length, target_key);
@@ -2430,8 +2497,8 @@ psa_status_t psa_copy_key(
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
-    if (!wolfpsa_alg_compatible(psa_get_key_algorithm(&src_attr),
-                                attributes->policy.alg)) {
+    if (!wolfpsa_alg_intersect(psa_get_key_algorithm(&src_attr),
+                               attributes->policy.alg, &copy_alg)) {
         wolfPSA_Store_Close(store);
         return PSA_ERROR_INVALID_ARGUMENT;
     }
@@ -2446,8 +2513,7 @@ psa_status_t psa_copy_key(
     dst_attr.bits = (dst_attr.bits == 0) ? src_attr.bits : dst_attr.bits;
     dst_attr.policy.usage = psa_get_key_usage_flags(&src_attr) &
                             psa_get_key_usage_flags(&dst_attr);
-    dst_attr.policy.alg = wolfpsa_copy_key_policy_alg(
-        psa_get_key_algorithm(&src_attr), dst_attr.policy.alg);
+    dst_attr.policy.alg = copy_alg;
 
     XMEMCPY(&key_data_length, header + attr_length, sizeof(size_t));
     status = wolfpsa_validate_stored_key_data_length(key_data_length);

@@ -20,6 +20,12 @@
  * PSA_ALG_ECDSA(PSA_ALG_ANY_HASH), which the PSA Crypto API defines as
  * two distinct algorithms.
  *
+ * MAC and AEAD policies have their own wildcards: a minimum MAC length
+ * and a minimum AEAD tag length. A copy narrows those to the algorithm
+ * both policies allow, or to the more restrictive minimum when both
+ * policies are wildcards, and is rejected when the concrete algorithm is
+ * shorter than the minimum the other policy requires.
+ *
  * This file is part of wolfPSA.
  *
  * Copyright (C) 2026 wolfSSL Inc.
@@ -72,6 +78,11 @@ static void set_key_attrs(psa_key_attributes_t *attrs, psa_key_type_t type,
                                  PSA_KEY_USAGE_SIGN_MESSAGE |
                                  PSA_KEY_USAGE_VERIFY_MESSAGE);
     }
+    else if (type == PSA_KEY_TYPE_AES) {
+        psa_set_key_usage_flags(attrs, PSA_KEY_USAGE_COPY |
+                                 PSA_KEY_USAGE_ENCRYPT |
+                                 PSA_KEY_USAGE_DECRYPT);
+    }
     else {
         psa_set_key_usage_flags(attrs, PSA_KEY_USAGE_COPY |
                                  PSA_KEY_USAGE_SIGN_HASH |
@@ -85,7 +96,7 @@ static void set_key_attrs(psa_key_attributes_t *attrs, psa_key_type_t type,
 }
 
 /* Create a key with the given policy: HMAC keys are imported from a
- * fixed raw key, asymmetric keys are generated. */
+ * fixed raw key, AES and asymmetric keys are generated. */
 static psa_status_t make_key(psa_key_type_t type, size_t bits,
                              psa_algorithm_t alg,
                              psa_key_lifetime_t lifetime,
@@ -112,9 +123,9 @@ static psa_status_t make_key(psa_key_type_t type, size_t bits,
 }
 
 /* Copy a key from the source policy to the destination policy, and
- * check the result and the stored policy of the destination key. For
- * expected rejections, a rejection at source key creation time counts
- * as a pass: the invalid policy is caught either way. */
+ * check the result and the stored policy of the destination key. The
+ * source key must always be created successfully: an expected rejection
+ * only counts when psa_copy_key() itself rejects the copy. */
 static int run_copy_case(psa_key_type_t type, size_t bits,
                          psa_algorithm_t src_alg, psa_algorithm_t dst_alg,
                          psa_key_lifetime_t lifetime, psa_key_id_t src_id,
@@ -130,16 +141,9 @@ static int run_copy_case(psa_key_type_t type, size_t bits,
 
     status = make_key(type, bits, src_alg, lifetime, src_id, &src_key);
     if (status != PSA_SUCCESS) {
-        if (expect_success) {
-            printf("FAIL %s: source key create: 0x%08x\n", label,
-                   (unsigned int)status);
-            ok = 1;
-        }
-        else {
-            printf("PASS %s (rejected at source key create: 0x%08x)\n",
-                   label, (unsigned int)status);
-        }
-        return ok;
+        printf("FAIL %s: source key create: 0x%08x\n", label,
+               (unsigned int)status);
+        return 1;
     }
     set_key_attrs(&attrs, type, bits, dst_alg, lifetime, dst_id);
     status = psa_copy_key(src_key, &attrs, &dst_key);
@@ -262,8 +266,8 @@ int main(void)
                              PSA_KEY_ID_NULL, 1,
                              PSA_ALG_HASH_ML_DSA(PSA_ALG_SHA_256),
                              "volatile ML-DSA ANY_HASH -> SHA_256");
-        /* HMAC(ANY_HASH) is not a supported policy: rejected either at
-         * source key creation or at the copy. */
+        /* HMAC(ANY_HASH) is not a supported policy: the copy is
+         * rejected. */
         ret |= run_copy_case(PSA_KEY_TYPE_HMAC, 256,
                              PSA_ALG_HMAC(PSA_ALG_ANY_HASH),
                              PSA_ALG_HMAC(PSA_ALG_SHA_256),
@@ -277,6 +281,72 @@ int main(void)
                              PSA_KEY_ID_USER_MIN + 105,
                              PSA_KEY_ID_USER_MIN + 106, 0, PSA_ALG_NONE,
                              "persistent HMAC ANY_HASH -> SHA_256");
+        /* MAC minimum-length wildcard: the copy keeps the algorithm both
+         * policies allow, and is rejected when the truncated MAC is
+         * shorter than the minimum the other policy requires. */
+        ret |= run_copy_case(PSA_KEY_TYPE_HMAC, 256,
+                             PSA_ALG_HMAC(PSA_ALG_SHA_256),
+                             PSA_ALG_AT_LEAST_THIS_LENGTH_MAC(
+                                 PSA_ALG_HMAC(PSA_ALG_SHA_256), 16),
+                             PSA_KEY_LIFETIME_VOLATILE, PSA_KEY_ID_NULL,
+                             PSA_KEY_ID_NULL, 1,
+                             PSA_ALG_HMAC(PSA_ALG_SHA_256),
+                             "volatile HMAC full -> at least 16");
+        ret |= run_copy_case(PSA_KEY_TYPE_HMAC, 256,
+                             PSA_ALG_AT_LEAST_THIS_LENGTH_MAC(
+                                 PSA_ALG_HMAC(PSA_ALG_SHA_256), 16),
+                             PSA_ALG_TRUNCATED_MAC(
+                                 PSA_ALG_HMAC(PSA_ALG_SHA_256), 20),
+                             PSA_KEY_LIFETIME_VOLATILE, PSA_KEY_ID_NULL,
+                             PSA_KEY_ID_NULL, 1,
+                             PSA_ALG_TRUNCATED_MAC(
+                                 PSA_ALG_HMAC(PSA_ALG_SHA_256), 20),
+                             "volatile HMAC at least 16 -> truncated 20");
+        ret |= run_copy_case(PSA_KEY_TYPE_HMAC, 256,
+                             PSA_ALG_AT_LEAST_THIS_LENGTH_MAC(
+                                 PSA_ALG_HMAC(PSA_ALG_SHA_256), 20),
+                             PSA_ALG_AT_LEAST_THIS_LENGTH_MAC(
+                                 PSA_ALG_HMAC(PSA_ALG_SHA_256), 16),
+                             PSA_KEY_LIFETIME_PERSISTENT,
+                             PSA_KEY_ID_USER_MIN + 109,
+                             PSA_KEY_ID_USER_MIN + 110, 1,
+                             PSA_ALG_AT_LEAST_THIS_LENGTH_MAC(
+                                 PSA_ALG_HMAC(PSA_ALG_SHA_256), 20),
+                             "persistent HMAC at least 16 -> at least 20");
+        ret |= run_copy_case(PSA_KEY_TYPE_HMAC, 256,
+                             PSA_ALG_AT_LEAST_THIS_LENGTH_MAC(
+                                 PSA_ALG_HMAC(PSA_ALG_SHA_256), 20),
+                             PSA_ALG_TRUNCATED_MAC(
+                                 PSA_ALG_HMAC(PSA_ALG_SHA_256), 16),
+                             PSA_KEY_LIFETIME_VOLATILE, PSA_KEY_ID_NULL,
+                             PSA_KEY_ID_NULL, 0, PSA_ALG_NONE,
+                             "volatile HMAC at least 20 -> truncated 16");
+        /* AEAD minimum-tag-length wildcard: same rules on the tag. */
+        ret |= run_copy_case(PSA_KEY_TYPE_AES, 128,
+                             PSA_ALG_AEAD_WITH_AT_LEAST_THIS_LENGTH_TAG(
+                                 PSA_ALG_GCM, 12),
+                             PSA_ALG_GCM,
+                             PSA_KEY_LIFETIME_VOLATILE, PSA_KEY_ID_NULL,
+                             PSA_KEY_ID_NULL, 1, PSA_ALG_GCM,
+                             "volatile GCM at least 12 -> GCM");
+        ret |= run_copy_case(PSA_KEY_TYPE_AES, 128,
+                             PSA_ALG_AEAD_WITH_AT_LEAST_THIS_LENGTH_TAG(
+                                 PSA_ALG_GCM, 12),
+                             PSA_ALG_AEAD_WITH_SHORTENED_TAG(PSA_ALG_GCM, 8),
+                             PSA_KEY_LIFETIME_VOLATILE, PSA_KEY_ID_NULL,
+                             PSA_KEY_ID_NULL, 0, PSA_ALG_NONE,
+                             "volatile GCM at least 12 -> tag 8");
+        ret |= run_copy_case(PSA_KEY_TYPE_AES, 128,
+                             PSA_ALG_AEAD_WITH_AT_LEAST_THIS_LENGTH_TAG(
+                                 PSA_ALG_GCM, 12),
+                             PSA_ALG_AEAD_WITH_AT_LEAST_THIS_LENGTH_TAG(
+                                 PSA_ALG_GCM, 8),
+                             PSA_KEY_LIFETIME_PERSISTENT,
+                             PSA_KEY_ID_USER_MIN + 111,
+                             PSA_KEY_ID_USER_MIN + 112, 1,
+                             PSA_ALG_AEAD_WITH_AT_LEAST_THIS_LENGTH_TAG(
+                                 PSA_ALG_GCM, 12),
+                             "persistent GCM at least 8 -> at least 12");
         if (ret == 0) {
             printf("psa_copy_key_narrowing_test: all tests passed\n");
         }
