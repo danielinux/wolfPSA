@@ -68,6 +68,7 @@
 
 #include <wolfssl/wolfcrypt/types.h>
 #include <wolfssl/wolfcrypt/wc_port.h>
+#include <wolfssl/wolfcrypt/error-crypt.h>
 
 /* wolfPSA is the PSA Crypto provider, so its persistent-key records must live in
  * the crypto-provider ITS caller namespace -- isolated from application
@@ -140,7 +141,10 @@ int wolfPSA_Store_OpenSz(int type, unsigned long id1, unsigned long id2, int rea
     ctx = (WolfpsaZephyrStore*)XMALLOC(sizeof(*ctx), NULL,
         DYNAMIC_TYPE_TMP_BUFFER);
     if (ctx == NULL) {
-        return WOLFPSA_STORE_IO_ERROR;
+        /* Runtime memory exhaustion, not a storage failure: report it as such
+         * so the caller can map it to PSA_ERROR_INSUFFICIENT_MEMORY, as the
+         * POSIX backend does for its own context allocation. */
+        return MEMORY_E;
     }
     XMEMSET(ctx, 0, sizeof(*ctx));
     ctx->uid = uid;
@@ -154,7 +158,7 @@ int wolfPSA_Store_OpenSz(int type, unsigned long id1, unsigned long id2, int rea
             DYNAMIC_TYPE_TMP_BUFFER);
         if (ctx->buf == NULL) {
             XFREE(ctx, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-            return WOLFPSA_STORE_IO_ERROR;
+            return MEMORY_E;
         }
         st = psa_its_get(uid, 0, (size_t)info.size, ctx->buf, &got);
         if (st != PSA_SUCCESS || got != (size_t)info.size) {
@@ -251,7 +255,7 @@ int wolfPSA_Store_Write(void* store, unsigned char* buffer, int len)
         grown = (unsigned char*)XMALLOC(ctx->len + (size_t)len, NULL,
             DYNAMIC_TYPE_TMP_BUFFER);
         if (grown == NULL) {
-            return WOLFPSA_STORE_IO_ERROR;
+            return MEMORY_E;
         }
         if (ctx->buf != NULL) {
             XMEMCPY(grown, ctx->buf, ctx->len);

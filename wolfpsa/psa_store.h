@@ -32,6 +32,9 @@
 #define WOLFPSA_STORE_OK             0
 #define WOLFPSA_STORE_NOT_AVAILABLE  (-4)
 #define WOLFPSA_STORE_IO_ERROR       (-5)
+/* A backend that fails to allocate its own context or buffers returns the
+ * wolfCrypt MEMORY_E instead, which psa_key_storage.c reports as
+ * PSA_ERROR_INSUFFICIENT_MEMORY rather than PSA_ERROR_STORAGE_FAILURE. */
 
 /*
  * Opens access to location to read/write PSA data.
