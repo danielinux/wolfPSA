@@ -487,6 +487,15 @@ psa_status_t psa_aead_update_ad(psa_aead_operation_t *operation,
     if (ctx == NULL) {
         return PSA_ERROR_BAD_STATE;
     }
+    if (ctx->streaming) {
+        /* The AAD is fed to the streaming primitive in one shot on the first
+         * data update: AAD appended after that would never be authenticated.
+         * The PSA Crypto API forbids the sequence anyway -- all AAD must be
+         * passed before the first psa_aead_update(). */
+        status = PSA_ERROR_BAD_STATE;
+        psa_aead_abort(operation);
+        return status;
+    }
     if (PSA_ALG_AEAD_EQUAL(ctx->alg, PSA_ALG_CCM) && !ctx->lengths_set) {
         return PSA_ERROR_BAD_STATE;
     }
@@ -1018,9 +1027,16 @@ static psa_status_t wolfpsa_aead_encrypt_final(wolfpsa_aead_ctx_t *ctx,
 #endif
     const uint8_t *input;
     const uint8_t *aad;
+    uint8_t empty_out = 0;
+    uint8_t *out;
 
-    if (ciphertext == NULL || ciphertext_length == NULL ||
-        tag == NULL || tag_length == NULL) {
+    if (ciphertext_length == NULL || tag == NULL || tag_length == NULL) {
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    /* PSA_AEAD_FINISH_OUTPUT_SIZE() is zero for the streaming algorithms, so a
+     * caller that emitted all ciphertext from update() may pass (NULL, 0)
+     * here. Only a NULL buffer with a nonzero size is a caller error. */
+    if (ciphertext == NULL && ciphertext_size != 0) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
@@ -1081,6 +1097,10 @@ static psa_status_t wolfpsa_aead_encrypt_final(wolfpsa_aead_ctx_t *ctx,
 
     input = wolfpsa_aead_nonnull_data(ctx->input, ctx->input_length);
     aad = wolfpsa_aead_nonnull_data(ctx->aad, ctx->aad_length);
+    /* Nothing is written when the buffer is NULL (the length check above
+     * proved there is no buffered payload), but the backends still want a
+     * writable pointer. */
+    out = (ciphertext != NULL) ? ciphertext : &empty_out;
 
     if (PSA_ALG_AEAD_EQUAL(ctx->alg, PSA_ALG_GCM)) {
 #ifdef HAVE_AESGCM
@@ -1090,7 +1110,7 @@ static psa_status_t wolfpsa_aead_encrypt_final(wolfpsa_aead_ctx_t *ctx,
             ret = wc_AesGcmSetKey(&aes, ctx->key, (word32)ctx->key_length);
         }
         if (ret == 0) {
-            ret = wc_AesGcmEncrypt(&aes, ciphertext, input,
+            ret = wc_AesGcmEncrypt(&aes, out, input,
                                    (word32)ctx->input_length,
                                    ctx->nonce, (word32)ctx->nonce_length,
                                    tag, (word32)ctx->tag_length,
@@ -1116,7 +1136,7 @@ static psa_status_t wolfpsa_aead_encrypt_final(wolfpsa_aead_ctx_t *ctx,
             ret = wc_AesCcmSetKey(&aes, ctx->key, (word32)ctx->key_length);
         }
         if (ret == 0) {
-            ret = wc_AesCcmEncrypt(&aes, ciphertext, input,
+            ret = wc_AesCcmEncrypt(&aes, out, input,
                                    (word32)ctx->input_length,
                                    ctx->nonce, (word32)ctx->nonce_length,
                                    tag, (word32)ctx->tag_length,
@@ -1155,7 +1175,7 @@ static psa_status_t wolfpsa_aead_encrypt_final(wolfpsa_aead_ctx_t *ctx,
             XFREE(tmp, NULL, DYNAMIC_TYPE_TMP_BUFFER);
             return PSA_ERROR_GENERIC_ERROR;
         }
-        XMEMCPY(ciphertext, tmp, ctx->input_length);
+        XMEMCPY(out, tmp, ctx->input_length);
         XMEMCPY(tag, tmp + ctx->input_length, ctx->tag_length);
         wc_ForceZero(tmp, chacha_ciphertext_size);
         XFREE(tmp, NULL, DYNAMIC_TYPE_TMP_BUFFER);
@@ -1182,8 +1202,16 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
     int ret;
     const uint8_t *input;
     const uint8_t *aad;
+    uint8_t empty_out = 0;
+    uint8_t *out;
 
-    if (plaintext == NULL || plaintext_length == NULL || tag == NULL) {
+    if (plaintext_length == NULL || tag == NULL) {
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    /* PSA_AEAD_VERIFY_OUTPUT_SIZE() is zero for the streaming algorithms, so a
+     * caller that emitted all plaintext from update() may pass (NULL, 0)
+     * here. Only a NULL buffer with a nonzero size is a caller error. */
+    if (plaintext == NULL && plaintext_size != 0) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
@@ -1242,6 +1270,9 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
 
     input = wolfpsa_aead_nonnull_data(ctx->input, ctx->input_length);
     aad = wolfpsa_aead_nonnull_data(ctx->aad, ctx->aad_length);
+    /* See the note in wolfpsa_aead_encrypt_final(): a zero-length output may
+     * legitimately be NULL. */
+    out = (plaintext != NULL) ? plaintext : &empty_out;
 
     if (PSA_ALG_AEAD_EQUAL(ctx->alg, PSA_ALG_GCM)) {
 #ifdef HAVE_AESGCM
@@ -1251,7 +1282,7 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
             ret = wc_AesGcmSetKey(&aes, ctx->key, (word32)ctx->key_length);
         }
         if (ret == 0) {
-            ret = wc_AesGcmDecrypt(&aes, plaintext, input,
+            ret = wc_AesGcmDecrypt(&aes, out, input,
                                    (word32)ctx->input_length,
                                    ctx->nonce, (word32)ctx->nonce_length,
                                    tag, (word32)tag_length,
@@ -1280,7 +1311,7 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
             ret = wc_AesCcmSetKey(&aes, ctx->key, (word32)ctx->key_length);
         }
         if (ret == 0) {
-            ret = wc_AesCcmDecrypt(&aes, plaintext, input,
+            ret = wc_AesCcmDecrypt(&aes, out, input,
                                    (word32)ctx->input_length,
                                    ctx->nonce, (word32)ctx->nonce_length,
                                    tag, (word32)tag_length,
@@ -1301,7 +1332,6 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
     else if (PSA_ALG_AEAD_EQUAL(ctx->alg, PSA_ALG_CHACHA20_POLY1305)) {
 #if defined(HAVE_CHACHA) && defined(HAVE_POLY1305)
         size_t out_len = 0;
-        uint8_t *ciphertext = ctx->input;
         size_t ciphertext_len;
         uint8_t *tmp;
         if (ctx->input_length > SIZE_MAX - tag_length) {
@@ -1313,13 +1343,13 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
         if (tmp == NULL) {
             return PSA_ERROR_INSUFFICIENT_MEMORY;
         }
-        XMEMCPY(tmp, ciphertext, ctx->input_length);
+        XMEMCPY(tmp, input, ctx->input_length);
         XMEMCPY(tmp + ctx->input_length, tag, tag_length);
         ret = psa_chacha20_poly1305_decrypt(ctx->key, ctx->key_length, ctx->alg,
                                             ctx->nonce, ctx->nonce_length,
                                             aad, ctx->aad_length,
                                             tmp, ciphertext_len,
-                                            plaintext, plaintext_size, &out_len);
+                                            out, plaintext_size, &out_len);
         wc_ForceZero(tmp, ciphertext_len);
         XFREE(tmp, NULL, DYNAMIC_TYPE_TMP_BUFFER);
         if (ret != 0) {

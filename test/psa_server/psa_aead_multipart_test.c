@@ -415,6 +415,126 @@ static void test_inplace_ccm(psa_key_id_t key_id, psa_algorithm_t alg,
     }
 }
 
+/* psa_aead_update_ad() must be rejected once payload streaming has started.
+ * The AAD is fed to the streaming primitive in one shot on the first
+ * psa_aead_update(), so AAD appended after that would never be authenticated
+ * and the operation would still produce a valid-looking tag. */
+static void test_late_update_ad(psa_key_id_t key_id, psa_algorithm_t alg,
+                                int is_ccm, psa_key_type_t key_type,
+                                const uint8_t *nonce, size_t nonce_len,
+                                const uint8_t *aad, size_t aad_len,
+                                const uint8_t *pt, size_t pt_len,
+                                int set_lengths)
+{
+    uint8_t out[PSA_AEAD_UPDATE_OUTPUT_SIZE(key_type, alg, 64)];
+    size_t out_len = 0;
+    psa_aead_operation_t op = psa_aead_operation_init();
+    psa_status_t st;
+
+    /* CCM cannot stream without the declared lengths. */
+    if (is_ccm && !set_lengths) {
+        return;
+    }
+
+    st = psa_aead_encrypt_setup(&op, key_id, alg);
+    if (check_status(st, "late_ad: encrypt_setup") != TEST_OK) return;
+    if (set_lengths) {
+        st = psa_aead_set_lengths(&op, aad_len, pt_len);
+        check_status(st, "late_ad: set_lengths");
+        if (st != PSA_SUCCESS) { psa_aead_abort(&op); return; }
+    }
+    st = psa_aead_set_nonce(&op, nonce, nonce_len);
+    check_status(st, "late_ad: set_nonce");
+    if (st != PSA_SUCCESS) { psa_aead_abort(&op); return; }
+    st = psa_aead_update_ad(&op, aad, aad_len);
+    check_status(st, "late_ad: update_ad");
+    if (st != PSA_SUCCESS) { psa_aead_abort(&op); return; }
+    st = psa_aead_update(&op, pt, pt_len, out, sizeof(out), &out_len);
+    check_status(st, "late_ad: update");
+    if (st != PSA_SUCCESS) { psa_aead_abort(&op); return; }
+
+    st = psa_aead_update_ad(&op, aad, aad_len);
+    check(st == PSA_ERROR_BAD_STATE,
+          set_lengths ? "late_ad: update_ad after update rejected"
+                      : "late_ad: update_ad after update rejected (no lengths)");
+    psa_aead_abort(&op);
+}
+
+/* PSA_AEAD_FINISH_OUTPUT_SIZE()/PSA_AEAD_VERIFY_OUTPUT_SIZE() are zero for
+ * ChaCha20-Poly1305, so a caller that emitted all payload from update() may
+ * pass (NULL, 0) as the final output buffer. */
+static void test_null_final_output(psa_key_id_t key_id, psa_algorithm_t alg,
+                                   const uint8_t *nonce, size_t nonce_len,
+                                   const uint8_t *aad, size_t aad_len,
+                                   const uint8_t *pt, size_t pt_len,
+                                   const uint8_t *ref, size_t ref_len)
+{
+    uint8_t buf[512];
+    uint8_t tag[PSA_AEAD_TAG_MAX_SIZE];
+    size_t buf_len = 0;
+    size_t tag_len = 0;
+    size_t fin_len = 1;
+    psa_aead_operation_t op = psa_aead_operation_init();
+    psa_status_t st;
+
+    if (ref_len < pt_len) {
+        check(0, "null_final: short reference");
+        return;
+    }
+
+    /* Encrypt: all ciphertext comes from update(), finish() emits only the
+     * tag into a (NULL, 0) output buffer. */
+    st = psa_aead_encrypt_setup(&op, key_id, alg);
+    if (check_status(st, "null_final: encrypt_setup") != TEST_OK) return;
+    st = psa_aead_set_nonce(&op, nonce, nonce_len);
+    check_status(st, "null_final: set_nonce");
+    if (st != PSA_SUCCESS) { psa_aead_abort(&op); return; }
+    st = psa_aead_update_ad(&op, aad, aad_len);
+    check_status(st, "null_final: update_ad");
+    if (st != PSA_SUCCESS) { psa_aead_abort(&op); return; }
+    st = psa_aead_update(&op, pt, pt_len, buf, sizeof(buf), &buf_len);
+    check_status(st, "null_final: update");
+    if (st != PSA_SUCCESS) { psa_aead_abort(&op); return; }
+    st = psa_aead_finish(&op, NULL, 0, &fin_len, tag, sizeof(tag), &tag_len);
+    psa_aead_abort(&op);
+    check(st == PSA_SUCCESS, "null_final: finish with (NULL, 0) output");
+    if (st != PSA_SUCCESS) {
+        return;
+    }
+    check(fin_len == 0, "null_final: finish emitted no ciphertext");
+    check(buf_len == pt_len && memcmp(buf, ref, pt_len) == 0,
+          "null_final: ciphertext matches reference");
+    check(tag_len == ref_len - pt_len &&
+          memcmp(tag, ref + pt_len, tag_len) == 0,
+          "null_final: tag matches reference");
+
+    /* Decrypt: same shape through psa_aead_verify(). */
+    buf_len = 0;
+    fin_len = 1;
+    op = psa_aead_operation_init();
+    st = psa_aead_decrypt_setup(&op, key_id, alg);
+    if (check_status(st, "null_final: decrypt_setup") != TEST_OK) return;
+    st = psa_aead_set_nonce(&op, nonce, nonce_len);
+    check_status(st, "null_final: decrypt set_nonce");
+    if (st != PSA_SUCCESS) { psa_aead_abort(&op); return; }
+    st = psa_aead_update_ad(&op, aad, aad_len);
+    check_status(st, "null_final: decrypt update_ad");
+    if (st != PSA_SUCCESS) { psa_aead_abort(&op); return; }
+    st = psa_aead_update(&op, ref, pt_len, buf, sizeof(buf), &buf_len);
+    check_status(st, "null_final: decrypt update");
+    if (st != PSA_SUCCESS) { psa_aead_abort(&op); return; }
+    st = psa_aead_verify(&op, NULL, 0, &fin_len, ref + pt_len,
+                         ref_len - pt_len);
+    psa_aead_abort(&op);
+    check(st == PSA_SUCCESS, "null_final: verify with (NULL, 0) output");
+    if (st != PSA_SUCCESS) {
+        return;
+    }
+    check(fin_len == 0, "null_final: verify emitted no plaintext");
+    check(buf_len == pt_len && memcmp(buf, pt, pt_len) == 0,
+          "null_final: plaintext matches");
+}
+
 static int run_algo(const char *name, psa_algorithm_t alg, int is_ccm,
                     psa_key_type_t key_type, size_t key_len,
                     size_t nonce_len, size_t aad_len,
@@ -460,6 +580,18 @@ static int run_algo(const char *name, psa_algorithm_t alg, int is_ccm,
 
     test_multipart_decrypt_bad_tag(key_id, alg, is_ccm, key_type, key_bits,
                                    nonce, nonce_len, aad, aad_len, ct, ct_len);
+
+    test_late_update_ad(key_id, alg, is_ccm, key_type, nonce, nonce_len,
+                        aad, aad_len, pt, pt_len, 1);
+    test_late_update_ad(key_id, alg, is_ccm, key_type, nonce, nonce_len,
+                        aad, aad_len, pt, pt_len, 0);
+
+    /* Only for the algorithms whose final output size is zero. */
+    if (PSA_AEAD_FINISH_OUTPUT_SIZE(key_type, alg) == 0 &&
+        PSA_AEAD_VERIFY_OUTPUT_SIZE(key_type, alg) == 0) {
+        test_null_final_output(key_id, alg, nonce, nonce_len,
+                               aad, aad_len, pt, pt_len, ct, ct_len);
+    }
 
     if (is_ccm) {
         test_inplace_ccm(key_id, alg, key_type, nonce, nonce_len, aad,
