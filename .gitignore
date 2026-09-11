@@ -54,6 +54,7 @@ test/psa_xof_input_wrap_test
 test/psa_xof_no_backend_test
 test/psa_xof_output_wrap_test
 test/psa_xof_set_context_test
+test/psa_import_key_probe_test
 
 
 # Local-only editor/agent context (not part of the module)
@@ -62,6 +63,7 @@ CLAUDE.md
 # Real-hardware board configs are kept local, not in-tree (CI is native_sim only)
 zephyr/**/boards/nucleo_*.conf
 zephyr/**/boards/nucleo_*.overlay
-/test/psa_devid_cryptocb_test
-/test/build-cryptocb
-/test/build-cryptocb-asan
+test/psa_devid_cryptocb_test
+test/build-probe
+test/build-cryptocb
+test/build-cryptocb-asan
