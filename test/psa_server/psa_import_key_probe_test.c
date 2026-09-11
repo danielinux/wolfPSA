@@ -26,9 +26,19 @@
  * of the wolfPSA_Store_* symbols.
  */
 
-#include <psa/crypto.h>
+/* MEMORY_E comes from wolfCrypt, whose headers need a configuration before
+ * <settings.h>: same prologue as the sibling tests that reach into it. */
+#include "psa_api_test_user_settings.h"
+
+#ifndef WOLFSSL_USER_SETTINGS
+#define WOLFSSL_USER_SETTINGS
+#endif
+
+#include <wolfssl/wolfcrypt/settings.h>
+#include <wolfssl/wolfcrypt/error-crypt.h>
+
+#include <wolfpsa/psa/crypto.h>
 #include <psa_store.h>
-#include <wolfssl/wolfcrypt/types.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -217,6 +227,40 @@ static int test_probe_io_error(void)
     return ok;
 }
 
+/* The probe fails to allocate its store context (MEMORY_E): import must
+ * report memory exhaustion, not a storage failure, and must leave the
+ * existing record intact. */
+static int test_probe_memory_error(void)
+{
+    psa_key_attributes_t attr;
+    uint8_t key[16];
+    uint8_t stored[16];
+    psa_key_id_t key_id = 0;
+    psa_status_t st;
+    int ok = 1;
+
+    mock_reset();
+    memset(stored, 0x33, sizeof(stored));
+    memcpy(g_data, stored, sizeof(stored));
+    g_len = sizeof(stored);
+    g_exists = 1;
+    g_probe_ret = MEMORY_E;
+    setup_aes_attr(&attr, 0x1000);
+    memset(key, 0xDD, sizeof(key));
+
+    st = psa_import_key(&attr, key, sizeof(key), &key_id);
+    if (st != PSA_ERROR_INSUFFICIENT_MEMORY) {
+        printf("FAIL probe_memory_error: expected INSUFFICIENT_MEMORY, "
+               "got %d\n", (int)st);
+        ok = 0;
+    }
+    if (g_len != sizeof(stored) || memcmp(g_data, stored, sizeof(stored)) != 0) {
+        printf("FAIL probe_memory_error: existing record was overwritten\n");
+        ok = 0;
+    }
+    return ok;
+}
+
 int main(void)
 {
     int ok = 1;
@@ -235,6 +279,9 @@ int main(void)
         ok = 0;
     }
     if (!test_probe_io_error()) {
+        ok = 0;
+    }
+    if (!test_probe_memory_error()) {
         ok = 0;
     }
 

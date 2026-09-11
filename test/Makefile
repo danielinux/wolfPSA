@@ -110,6 +110,10 @@ PSA_REGRESSION_TESTS = psa_aead_multipart_test \
 	psa_key_declared_bits_test
 BINARIES += $(PSA_REGRESSION_TESTS)
 
+# Regression test with a custom link: it replaces the store backend, so it
+# cannot use the recipe above (see PROBE_LIB below).
+BINARIES += psa_import_key_probe_test
+
 ifdef WOLFSSL_HAS_PSA_TLS
 BINARIES += psa_tls_server
 endif
@@ -208,6 +212,29 @@ psa_devid_cryptocb_test: psa_server/psa_devid_cryptocb_test.c $(CRYPTOCB_LIB) FO
 	$(CC) $(CRYPTOCB_CPPFLAGS) $(CFLAGS) -o $@ $< $(CRYPTOCB_LIB) \
 		$(SANITIZE_FLAGS) -lpthread -lm
 
+# psa_import_key_probe_test ships its own wolfPSA_Store_* backend: the POSIX
+# store cannot fail a read probe with an I/O error, only succeed or report
+# "not available", so the probe-failure path needs a mock. It therefore links
+# against a copy of the static library with the store backend objects removed,
+# leaving the test as the only provider of those symbols.
+PROBE_BUILD_DIR := $(abspath .)/build-probe$(if $(SANITIZE_FLAGS),-asan)
+PROBE_LIB := $(PROBE_BUILD_DIR)/libwolfpsa-nostore.a
+
+# FORCE: only the library build knows whether libwolfpsa.a changed, and a
+# stale copy here would test code the library no longer contains.
+$(PROBE_LIB): FORCE
+	@mkdir -p $(PROBE_BUILD_DIR)
+	@test -f $(WOLFPSA_PATH)/libwolfpsa.a || { \
+		echo "libwolfpsa.a not found: build the library first (make -C $(WOLFPSA_PATH))"; \
+		exit 1; \
+	}
+	cp $(WOLFPSA_PATH)/libwolfpsa.a $@
+	$(AR) d $@ psa_store_posix.o psa_store_zephyr.o
+
+psa_import_key_probe_test: require-wolfssl-lib psa_server/psa_import_key_probe_test.o $(PROBE_LIB)
+	$(CC) $(CFLAGS) -o $@ psa_server/psa_import_key_probe_test.o $(PROBE_LIB) \
+		$(LDFLAGS) -lwolfssl -lpthread -lm $(RPATH_WOLFSSL)
+
 wolfcrypt-psa-benchmark:
 	make -C wolfcrypt-benchmark
 	cp wolfcrypt-benchmark/wolfcrypt-psa-benchmark ./wolfcrypt-psa-benchmark
@@ -245,4 +272,5 @@ clean:
 	make -C wolfcrypt-benchmark clean
 	rm -f psa_server/*.o
 	rm -rf $(abspath .)/build-cryptocb $(abspath .)/build-cryptocb-asan
+	rm -rf $(abspath .)/build-probe $(abspath .)/build-probe-asan
 	rm -f $(BINARIES) psa_devid_cryptocb_test *.o *.log
