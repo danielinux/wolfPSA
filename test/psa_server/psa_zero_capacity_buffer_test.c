@@ -53,6 +53,19 @@ static int check_status(psa_status_t st, psa_status_t expected,
 }
 
 /* F-13861: psa_generate_random(NULL, 0) is a valid empty request. */
+static int test_random_zero(void)
+{
+    int rc = 0;
+
+    rc |= check_status(psa_generate_random(NULL, 0), PSA_SUCCESS,
+                       "generate_random(NULL, 0)");
+    if (rc == 0) {
+        printf("PASS: random zero-length\n");
+    }
+    return rc;
+}
+
+/* F-13862: exporting a nonempty key into (NULL, 0) is BUFFER_TOO_SMALL. */
 static int test_copy_key_failure_clears_target(void)
 {
     psa_key_attributes_t attrs = psa_key_attributes_init();
@@ -83,6 +96,7 @@ int main(void)
         return 1;
     }
 
+    rc |= test_random_zero();
     rc |= test_copy_key_failure_clears_target();
 
     if (rc != 0) {
