@@ -899,18 +899,26 @@ static psa_status_t wolfpsa_aead_stream_final(wolfpsa_aead_ctx_t *ctx,
     else if (PSA_ALG_AEAD_EQUAL(ctx->alg, PSA_ALG_CHACHA20_POLY1305)) {
 #if defined(HAVE_CHACHA) && defined(HAVE_POLY1305)
         uint8_t computed[CHACHA20_POLY1305_AEAD_AUTHTAG_SIZE];
+        psa_status_t status;
 
         ret = wc_ChaCha20Poly1305_Final(&ctx->chacha, computed);
         if (ret != 0) {
-            return wc_error_to_psa_status(ret);
+            status = wc_error_to_psa_status(ret);
+            goto chacha_done;
         }
         if (ctx->direction) {
             XMEMCPY(tag, computed, tag_len);
+            status = PSA_SUCCESS;
         }
         else if (wc_ChaCha20Poly1305_CheckTag(computed, tag) != 0) {
-            return PSA_ERROR_INVALID_SIGNATURE;
+            status = PSA_ERROR_INVALID_SIGNATURE;
         }
-        return PSA_SUCCESS;
+        else {
+            status = PSA_SUCCESS;
+        }
+chacha_done:
+        wc_ForceZero(computed, sizeof(computed));
+        return status;
 #else
         return PSA_ERROR_NOT_SUPPORTED;
 #endif
@@ -933,6 +941,7 @@ static psa_status_t wolfpsa_aead_stream_final(wolfpsa_aead_ctx_t *ctx,
             for (i = 0; i < tag_len; i++) {
                 diff |= computed[i] ^ tag[i];
             }
+            wc_ForceZero(computed, sizeof(computed));
             if (diff != 0) {
                 return PSA_ERROR_INVALID_SIGNATURE;
             }
