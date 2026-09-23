@@ -1369,6 +1369,9 @@ psa_status_t psa_cipher_finish(psa_cipher_operation_t *operation,
     if (ctx == NULL) {
         return wolfpsa_cipher_fail(operation, PSA_ERROR_BAD_STATE);
     }
+    if (output == NULL && output_size > 0) {
+        return wolfpsa_cipher_fail(operation, PSA_ERROR_INVALID_ARGUMENT);
+    }
 
     if (ctx->alg == PSA_ALG_CBC_PKCS7) {
         size_t block_size = ctx->block_size;
