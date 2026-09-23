@@ -689,20 +689,25 @@ static int test_aead_usage_policy_negative(void)
     psa_set_key_algorithm(&attrs, PSA_ALG_XCHACHA20_POLY1305);
 
     st = psa_import_key(&attrs, xchacha_key, sizeof(xchacha_key), &key_id);
-    if (expect_status("usage xchacha dec-only import", st, PSA_SUCCESS) != 0)
-        return 1;
-
-    out_len = 0;
-    st = psa_aead_encrypt(key_id, PSA_ALG_XCHACHA20_POLY1305,
-                          xchacha_nonce, sizeof(xchacha_nonce),
-                          NULL, 0,
-                          xchacha_pt, sizeof(xchacha_pt),
-                          out, sizeof(out), &out_len);
-    if (expect_status("usage xchacha dec-only encrypt rejected", st,
-                      PSA_ERROR_NOT_PERMITTED) != 0) {
-        rc = 1;
+    if (st == PSA_ERROR_NOT_SUPPORTED) {
+        printf("SKIP aead_usage_policy xchacha (not supported by this build)\n");
     }
-    (void)psa_destroy_key(key_id);
+    else {
+        if (expect_status("usage xchacha dec-only import", st, PSA_SUCCESS) != 0)
+            return 1;
+
+        out_len = 0;
+        st = psa_aead_encrypt(key_id, PSA_ALG_XCHACHA20_POLY1305,
+                              xchacha_nonce, sizeof(xchacha_nonce),
+                              NULL, 0,
+                              xchacha_pt, sizeof(xchacha_pt),
+                              out, sizeof(out), &out_len);
+        if (expect_status("usage xchacha dec-only encrypt rejected", st,
+                          PSA_ERROR_NOT_PERMITTED) != 0) {
+            rc = 1;
+        }
+        (void)psa_destroy_key(key_id);
+    }
 
     /* --- Ascon-AEAD128 -------------------------------------------------- */
 
@@ -746,20 +751,25 @@ static int test_aead_usage_policy_negative(void)
 
     st = psa_import_key(&attrs, ascon_aead128_key, sizeof(ascon_aead128_key),
                         &key_id);
-    if (expect_status("usage ascon dec-only import", st, PSA_SUCCESS) != 0)
-        return 1;
-
-    out_len = 0;
-    st = psa_aead_encrypt(key_id, PSA_ALG_ASCON_AEAD128,
-                          ascon_aead128_nonce, sizeof(ascon_aead128_nonce),
-                          NULL, 0,
-                          ascon_aead128_pt, sizeof(ascon_aead128_pt),
-                          out, sizeof(out), &out_len);
-    if (expect_status("usage ascon dec-only encrypt rejected", st,
-                      PSA_ERROR_NOT_PERMITTED) != 0) {
-        rc = 1;
+    if (st == PSA_ERROR_NOT_SUPPORTED) {
+        printf("SKIP aead_usage_policy ascon (not supported by this build)\n");
     }
-    (void)psa_destroy_key(key_id);
+    else {
+        if (expect_status("usage ascon dec-only import", st, PSA_SUCCESS) != 0)
+            return 1;
+
+        out_len = 0;
+        st = psa_aead_encrypt(key_id, PSA_ALG_ASCON_AEAD128,
+                              ascon_aead128_nonce, sizeof(ascon_aead128_nonce),
+                              NULL, 0,
+                              ascon_aead128_pt, sizeof(ascon_aead128_pt),
+                              out, sizeof(out), &out_len);
+        if (expect_status("usage ascon dec-only encrypt rejected", st,
+                          PSA_ERROR_NOT_PERMITTED) != 0) {
+            rc = 1;
+        }
+        (void)psa_destroy_key(key_id);
+    }
 
     if (rc == 0) {
         printf("aead_usage_policy_negative: OK\n");
