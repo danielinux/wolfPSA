@@ -136,7 +136,8 @@ psa_status_t psa_asymmetric_export_public_key_x25519(psa_key_type_t key_type,
         key_bits != 255) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
-    if (key_buffer == NULL || output == NULL || output_length == NULL) {
+    if (key_buffer == NULL || output_length == NULL ||
+        (output == NULL && output_size != 0)) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
     if (output_size < CURVE25519_KEYSIZE) {
@@ -383,7 +384,8 @@ psa_status_t psa_asymmetric_export_public_key_x448(psa_key_type_t key_type,
         key_bits != 448) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
-    if (key_buffer == NULL || output == NULL || output_length == NULL) {
+    if (key_buffer == NULL || output_length == NULL ||
+        (output == NULL && output_size != 0)) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
     if (output_size < CURVE448_KEY_SIZE) {
