@@ -166,6 +166,40 @@ static int test_hash_compare_empty_reference(void)
 }
 
 /* F-13865: finishing a MAC into (NULL, 0) is BUFFER_TOO_SMALL. */
+static int test_mac_finish_zero_capacity(void)
+{
+    psa_mac_operation_t op = PSA_MAC_OPERATION_INIT;
+    psa_key_attributes_t attrs = psa_key_attributes_init();
+    psa_key_id_t key = PSA_KEY_ID_NULL;
+    uint8_t mac_key[32];
+    uint8_t data[16];
+    size_t len = 0;
+    int rc = 0;
+
+    memset(mac_key, 0x21, sizeof(mac_key));
+    memset(data, 0x42, sizeof(data));
+    psa_set_key_type(&attrs, PSA_KEY_TYPE_HMAC);
+    psa_set_key_bits(&attrs, 256);
+    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_SIGN_MESSAGE);
+    psa_set_key_algorithm(&attrs, PSA_ALG_HMAC(PSA_ALG_SHA_256));
+    rc |= check_status(psa_import_key(&attrs, mac_key, sizeof(mac_key),
+                                      &key),
+                       PSA_SUCCESS, "import HMAC key");
+    rc |= check_status(psa_mac_sign_setup(&op, key,
+                                          PSA_ALG_HMAC(PSA_ALG_SHA_256)),
+                       PSA_SUCCESS, "mac sign setup");
+    rc |= check_status(psa_mac_update(&op, data, sizeof(data)),
+                       PSA_SUCCESS, "mac update");
+    rc |= check_status(psa_mac_sign_finish(&op, NULL, 0, &len),
+                       PSA_ERROR_BUFFER_TOO_SMALL,
+                       "mac_sign_finish(NULL, 0)");
+    if (rc == 0) {
+        printf("PASS: mac finish zero-capacity\n");
+    }
+    return rc;
+}
+
+/* F-13870: AEAD nonce and tag outputs accept (NULL, 0) as a size query. */
 int main(void)
 {
     int rc = 0;
@@ -180,6 +214,7 @@ int main(void)
     rc |= test_copy_key_failure_clears_target();
     rc |= test_hash_finish_zero_capacity();
     rc |= test_hash_compare_empty_reference();
+    rc |= test_mac_finish_zero_capacity();
 
     if (rc != 0) {
         printf("PSA zero-capacity buffer test: FAIL\n");
