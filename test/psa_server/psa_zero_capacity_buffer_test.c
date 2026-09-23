@@ -200,6 +200,47 @@ static int test_mac_finish_zero_capacity(void)
 }
 
 /* F-13870: AEAD nonce and tag outputs accept (NULL, 0) as a size query. */
+static int test_encapsulate_zero_capacity(void)
+{
+    psa_key_attributes_t attrs = psa_key_attributes_init();
+    psa_key_attributes_t ss_attrs = psa_key_attributes_init();
+    psa_key_id_t kp = PSA_KEY_ID_NULL;
+    psa_key_id_t ss = 0x12345678;
+    size_t ct_len = 0xdeadbeef;
+    int rc = 0;
+
+    psa_set_key_type(&attrs, PSA_KEY_TYPE_ML_KEM_KEY_PAIR);
+    psa_set_key_bits(&attrs, 512);
+    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_ENCRYPT);
+    psa_set_key_algorithm(&attrs, PSA_ALG_ML_KEM);
+    rc |= check_status(psa_generate_key(&attrs, &kp), PSA_SUCCESS,
+                       "generate ML-KEM key pair");
+    if (rc != 0) {
+        return rc;
+    }
+
+    psa_set_key_type(&ss_attrs, PSA_KEY_TYPE_DERIVE);
+    psa_set_key_usage_flags(&ss_attrs, PSA_KEY_USAGE_EXPORT);
+    psa_set_key_algorithm(&ss_attrs, PSA_ALG_HKDF(PSA_ALG_SHA_256));
+    psa_set_key_bits(&ss_attrs, 0);
+
+    rc |= check_status(psa_encapsulate(kp, PSA_ALG_ML_KEM, &ss_attrs,
+                                       &ss, NULL, 0, &ct_len),
+                       PSA_ERROR_BUFFER_TOO_SMALL,
+                       "encapsulate (NULL, 0)");
+    if (ss != PSA_KEY_ID_NULL || ct_len != 0) {
+        printf("FAIL: encapsulate left outputs uncleared on failure "
+               "(ss=%u ct_len=%zu)\n",
+               (unsigned)ss, ct_len);
+        rc = 1;
+    }
+
+    if (rc == 0) {
+        printf("PASS: encapsulate zero-capacity\n");
+    }
+    return rc;
+}
+
 int main(void)
 {
     int rc = 0;
@@ -215,6 +256,7 @@ int main(void)
     rc |= test_hash_finish_zero_capacity();
     rc |= test_hash_compare_empty_reference();
     rc |= test_mac_finish_zero_capacity();
+    rc |= test_encapsulate_zero_capacity();
 
     if (rc != 0) {
         printf("PSA zero-capacity buffer test: FAIL\n");
