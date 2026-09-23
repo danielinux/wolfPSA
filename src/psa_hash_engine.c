@@ -605,7 +605,10 @@ psa_status_t psa_hash_finish(psa_hash_operation_t *operation,
     size_t expected_hash_size;
     psa_hash_operation_ctx_t *ctx = psa_hash_get_ctx(operation);
 
-    if (operation == NULL || hash == NULL || hash_length == NULL) {
+    /* A NULL hash pointer is only an error when the caller declared a
+     * nonzero capacity; (NULL, 0) must reach the size check below. */
+    if (operation == NULL || hash_length == NULL ||
+        (hash == NULL && hash_size != 0)) {
         return wolfpsa_hash_fail(operation, PSA_ERROR_INVALID_ARGUMENT);
     }
 

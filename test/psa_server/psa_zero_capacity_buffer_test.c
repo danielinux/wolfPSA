@@ -128,6 +128,28 @@ static int test_copy_key_failure_clears_target(void)
 }
 
 /* F-13863: finishing a hash into (NULL, 0) is BUFFER_TOO_SMALL. */
+static int test_hash_finish_zero_capacity(void)
+{
+    psa_hash_operation_t op = PSA_HASH_OPERATION_INIT;
+    uint8_t data[16];
+    size_t len = 0;
+    int rc = 0;
+
+    memset(data, 0x42, sizeof(data));
+    rc |= check_status(psa_hash_setup(&op, PSA_ALG_SHA_256), PSA_SUCCESS,
+                       "hash setup");
+    rc |= check_status(psa_hash_update(&op, data, sizeof(data)),
+                       PSA_SUCCESS, "hash update");
+    rc |= check_status(psa_hash_finish(&op, NULL, 0, &len),
+                       PSA_ERROR_BUFFER_TOO_SMALL,
+                       "hash_finish(NULL, 0)");
+    if (rc == 0) {
+        printf("PASS: hash finish zero-capacity\n");
+    }
+    return rc;
+}
+
+/* F-13864: a zero-length reference digest is a mismatch, not an argument. */
 int main(void)
 {
     int rc = 0;
@@ -140,6 +162,7 @@ int main(void)
     rc |= test_random_zero();
     rc |= test_export_zero_capacity();
     rc |= test_copy_key_failure_clears_target();
+    rc |= test_hash_finish_zero_capacity();
 
     if (rc != 0) {
         printf("PSA zero-capacity buffer test: FAIL\n");
