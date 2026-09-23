@@ -689,7 +689,9 @@ psa_status_t psa_cipher_generate_iv(psa_cipher_operation_t *operation,
     if (ctx->direction != AES_ENCRYPTION) {
         return PSA_ERROR_BAD_STATE;
     }
-    if (iv == NULL || iv_length == NULL) {
+    /* A NULL iv pointer is only an error when the caller declared a
+     * nonzero capacity; (NULL, 0) must reach the size check below. */
+    if (iv_length == NULL || (iv == NULL && iv_size != 0)) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 

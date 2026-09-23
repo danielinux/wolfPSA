@@ -298,6 +298,37 @@ static int test_aead_verify_empty_tag(void)
 }
 
 /* F-13872: generating an IV into (NULL, 0) is BUFFER_TOO_SMALL. */
+static int test_cipher_generate_iv_zero_capacity(void)
+{
+    psa_cipher_operation_t op = PSA_CIPHER_OPERATION_INIT;
+    psa_key_attributes_t attrs = psa_key_attributes_init();
+    psa_key_id_t key = PSA_KEY_ID_NULL;
+    uint8_t aes_key[32];
+    size_t len = 0;
+    int rc = 0;
+
+    memset(aes_key, 0x5a, sizeof(aes_key));
+    psa_set_key_type(&attrs, PSA_KEY_TYPE_AES);
+    psa_set_key_bits(&attrs, 256);
+    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_ENCRYPT);
+    psa_set_key_algorithm(&attrs, PSA_ALG_CBC_NO_PADDING);
+    rc |= check_status(psa_import_key(&attrs, aes_key, sizeof(aes_key),
+                                      &key),
+                       PSA_SUCCESS, "import AES key");
+    rc |= check_status(psa_cipher_encrypt_setup(&op, key,
+                                                PSA_ALG_CBC_NO_PADDING),
+                       PSA_SUCCESS, "cipher encrypt setup");
+    rc |= check_status(psa_cipher_generate_iv(&op, NULL, 0, &len),
+                       PSA_ERROR_BUFFER_TOO_SMALL,
+                       "cipher_generate_iv(NULL, 0)");
+
+    if (rc == 0) {
+        printf("PASS: cipher generate IV zero-capacity\n");
+    }
+    return rc;
+}
+
+/* F-13867/F-13868/F-13869: RSA encrypt/decrypt/sign/verify contracts. */
 static int test_rsa_zero_capacity(void)
 {
     psa_key_attributes_t attrs = psa_key_attributes_init();
@@ -497,6 +528,7 @@ int main(void)
     rc |= test_mac_finish_zero_capacity();
     rc |= test_aead_zero_capacity();
     rc |= test_aead_verify_empty_tag();
+    rc |= test_cipher_generate_iv_zero_capacity();
     rc |= test_rsa_zero_capacity();
     rc |= test_raw_key_agreement_zero_capacity();
     rc |= test_encapsulate_zero_capacity();
