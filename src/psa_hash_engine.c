@@ -974,8 +974,8 @@ psa_status_t psa_hash_compare(psa_algorithm_t alg,
         return PSA_ERROR_BAD_STATE;
     }
     
-    /* Check if the reference hash length is valid */
-    if (!PSA_ALG_IS_HASH(alg) || hash == NULL) {
+    /* Check if the algorithm is a supported hash */
+    if (!PSA_ALG_IS_HASH(alg)) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
@@ -983,9 +983,17 @@ psa_status_t psa_hash_compare(psa_algorithm_t alg,
     if (expected_hash_size == 0) {
         return PSA_ERROR_NOT_SUPPORTED;
     }
-    
+
+    /* A zero-length reference cannot match a fixed-size digest; it is a
+     * verification mismatch, not an invalid argument. */
     if (hash_length != expected_hash_size) {
         return PSA_ERROR_INVALID_SIGNATURE;
+    }
+
+    /* The length check above guarantees a nonzero length here, so a NULL
+     * reference pointer is a caller error. */
+    if (hash == NULL) {
+        return PSA_ERROR_INVALID_ARGUMENT;
     }
     
     /* Compute the hash */

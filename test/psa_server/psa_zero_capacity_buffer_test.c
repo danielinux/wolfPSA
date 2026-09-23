@@ -150,6 +150,22 @@ static int test_hash_finish_zero_capacity(void)
 }
 
 /* F-13864: a zero-length reference digest is a mismatch, not an argument. */
+static int test_hash_compare_empty_reference(void)
+{
+    uint8_t data[3] = {'a', 'b', 'c'};
+    int rc;
+
+    rc = check_status(psa_hash_compare(PSA_ALG_SHA_256, data, sizeof(data),
+                                       NULL, 0),
+                      PSA_ERROR_INVALID_SIGNATURE,
+                      "hash_compare(NULL, 0)");
+    if (rc == 0) {
+        printf("PASS: hash compare empty reference\n");
+    }
+    return rc;
+}
+
+/* F-13865: finishing a MAC into (NULL, 0) is BUFFER_TOO_SMALL. */
 int main(void)
 {
     int rc = 0;
@@ -163,6 +179,7 @@ int main(void)
     rc |= test_export_zero_capacity();
     rc |= test_copy_key_failure_clears_target();
     rc |= test_hash_finish_zero_capacity();
+    rc |= test_hash_compare_empty_reference();
 
     if (rc != 0) {
         printf("PSA zero-capacity buffer test: FAIL\n");
