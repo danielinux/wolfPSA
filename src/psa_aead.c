@@ -463,7 +463,9 @@ psa_status_t psa_aead_generate_nonce(psa_aead_operation_t *operation,
     if (ctx == NULL) {
         return PSA_ERROR_BAD_STATE;
     }
-    if (nonce == NULL || nonce_length == NULL) {
+    /* A NULL nonce pointer is only an error when the caller declared a
+     * nonzero capacity; (NULL, 0) must reach the size check below. */
+    if (nonce_length == NULL || (nonce == NULL && nonce_size != 0)) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
     if (!ctx->direction) {
@@ -1048,7 +1050,10 @@ static psa_status_t wolfpsa_aead_encrypt_final(wolfpsa_aead_ctx_t *ctx,
     uint8_t empty_out = 0;
     uint8_t *out;
 
-    if (ciphertext_length == NULL || tag == NULL || tag_length == NULL) {
+    /* A NULL tag pointer is only an error when the caller declared a
+     * nonzero capacity; (NULL, 0) must reach the size check below. */
+    if (ciphertext_length == NULL || tag_length == NULL ||
+        (tag == NULL && tag_size != 0)) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
     /* PSA_AEAD_FINISH_OUTPUT_SIZE() is zero for the streaming algorithms, so a
