@@ -22,6 +22,7 @@
 #include "psa_config.h"
 
 #include <psa/crypto.h>
+#include <stdatomic.h>
 
 extern int wolfPSA_CryptoIsInitialized(void);
 
@@ -165,14 +166,20 @@ psa_status_t psa_hash_resume(psa_hash_operation_t *operation,
 
 /* --- Interruptible max-ops configuration --- */
 
-static uint32_t wolfPSA_interruptible_max_ops = PSA_INTERRUPTIBLE_MAX_OPS_UNLIMITED;
+/* Atomic: the setter may run on a control thread while the getter is
+ * called from crypto threads. Relaxed ordering is enough - a stale value
+ * only delays enforcement of a new limit. */
+static atomic_uint_fast32_t wolfPSA_interruptible_max_ops =
+    PSA_INTERRUPTIBLE_MAX_OPS_UNLIMITED;
 
 void psa_interruptible_set_max_ops(uint32_t max_ops) {
-    wolfPSA_interruptible_max_ops = max_ops;
+    atomic_store_explicit(&wolfPSA_interruptible_max_ops, max_ops,
+                          memory_order_relaxed);
 }
 
 uint32_t psa_interruptible_get_max_ops(void) {
-    return wolfPSA_interruptible_max_ops;
+    return atomic_load_explicit(&wolfPSA_interruptible_max_ops,
+                                memory_order_relaxed);
 }
 
 /* --- Interruptible sign/verify hash --- */
