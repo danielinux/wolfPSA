@@ -1588,14 +1588,23 @@ psa_status_t psa_cipher_encrypt(psa_key_id_t key,
         offset = iv_len;
     }
 
-    status = psa_cipher_update(&operation, input, input_length, output + offset,
+    /* A NULL output with output_size 0 is a legal zero-length buffer;
+     * pointer arithmetic on it is undefined, so advance the pointer only
+     * when it is non-NULL and pass NULL through. */
+    if (output != NULL) {
+        output += offset;
+    }
+    status = psa_cipher_update(&operation, input, input_length, output,
                                output_size - offset, &out_len);
     if (status != PSA_SUCCESS) {
         psa_cipher_abort(&operation);
         return status;
     }
 
-    status = psa_cipher_finish(&operation, output + offset + out_len,
+    if (output != NULL) {
+        output += out_len;
+    }
+    status = psa_cipher_finish(&operation, output,
                                output_size - offset - out_len, &finish_len);
     if (status != PSA_SUCCESS) {
         psa_cipher_abort(&operation);
@@ -1687,7 +1696,10 @@ psa_status_t psa_cipher_decrypt(psa_key_id_t key,
         return status;
     }
 
-    status = psa_cipher_finish(&operation, output + out_len,
+    if (output != NULL) {
+        output += out_len;
+    }
+    status = psa_cipher_finish(&operation, output,
                                output_size - out_len, &finish_len);
     if (status != PSA_SUCCESS) {
         psa_cipher_abort(&operation);
