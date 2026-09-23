@@ -140,7 +140,6 @@ psa_status_t wc_error_to_psa_status(int ret)
             status = PSA_ERROR_HARDWARE_FAILURE;
             break;
         case SIG_VERIFY_E:
-        case RSA_PAD_E:
             status = PSA_ERROR_INVALID_SIGNATURE;
             break;
         case AES_GCM_AUTH_E:
@@ -154,6 +153,9 @@ psa_status_t wc_error_to_psa_status(int ret)
             status = PSA_ERROR_INSUFFICIENT_ENTROPY;
             break;
         case BAD_PADDING_E:
+        /* wc_RsaPrivateDecrypt() reports a failed unpad this way; the
+         * verification paths translate it to INVALID_SIGNATURE themselves. */
+        case RSA_PAD_E:
             status = PSA_ERROR_INVALID_PADDING;
             break;
         case BAD_STATE_E:
