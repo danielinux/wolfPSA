@@ -4830,7 +4830,9 @@ static int test_asym_rsa_oaep_usage_policy(void)
     static const uint8_t plaintext[] = "psa rsa oaep";
     uint8_t exported_pub[256];
     uint8_t ciphertext[256];
-    uint8_t decrypted[sizeof(plaintext)];
+    uint8_t decrypted[PSA_ASYMMETRIC_DECRYPT_OUTPUT_SIZE(
+                              PSA_KEY_TYPE_RSA_KEY_PAIR, 1024,
+                              PSA_ALG_RSA_OAEP(PSA_ALG_SHA_256))];
     size_t exported_pub_len = 0;
     size_t ciphertext_len = 0;
     size_t decrypted_len = 0;

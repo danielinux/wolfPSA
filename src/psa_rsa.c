@@ -482,8 +482,7 @@ psa_status_t psa_asymmetric_encrypt_rsa(psa_key_type_t key_type,
     WC_RNG rng;
     int padding;
     int hash_type;
-    
-    (void)key_bits;
+
     (void)salt;
     (void)salt_length;
 
@@ -497,6 +496,13 @@ psa_status_t psa_asymmetric_encrypt_rsa(psa_key_type_t key_type,
         (wolfpsa_check_word32_length(output_size) != PSA_SUCCESS) ||
         (wolfpsa_check_word32_length(salt_length) != PSA_SUCCESS)) {
         return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    /* RSA encryption output is always modulus-sized; check capacity before
+     * the backend call so a NULL zero-capacity buffer gets the contract
+     * status instead of a backend argument error. */
+    if (output_size < PSA_ASYMMETRIC_ENCRYPT_OUTPUT_SIZE(key_type, key_bits,
+                                                         alg)) {
+        return PSA_ERROR_BUFFER_TOO_SMALL;
     }
     
     /* Initialize RSA key */
@@ -594,7 +600,6 @@ psa_status_t psa_asymmetric_decrypt_rsa(psa_key_type_t key_type,
     WC_RNG rng;
 #endif
 
-    (void)key_bits;
     (void)salt;
     (void)salt_length;
 
@@ -607,6 +612,13 @@ psa_status_t psa_asymmetric_decrypt_rsa(psa_key_type_t key_type,
         (wolfpsa_check_word32_length(output_size) != PSA_SUCCESS) ||
         (wolfpsa_check_word32_length(salt_length) != PSA_SUCCESS)) {
         return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    /* The decrypted message is at most the modulus size minus the padding;
+     * check capacity before the backend call, which writes to the output
+     * buffer before it detects a short buffer. */
+    if (output_size < PSA_ASYMMETRIC_DECRYPT_OUTPUT_SIZE(key_type, key_bits,
+                                                         alg)) {
+        return PSA_ERROR_BUFFER_TOO_SMALL;
     }
 
     /* Initialize RSA key */

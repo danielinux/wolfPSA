@@ -393,7 +393,10 @@ psa_status_t psa_asymmetric_encrypt(psa_key_id_t key,
     }
 
     if (PSA_KEY_TYPE_IS_RSA(attributes.type)) {
-        if (output == NULL) {
+        /* A NULL output pointer is only an error when the caller declared a
+         * nonzero capacity; (NULL, 0) must reach the required-size check in
+         * the backend worker. */
+        if (output == NULL && output_size != 0) {
             wolfpsa_forcezero_free_key_data(key_data, key_data_length);
             return PSA_ERROR_INVALID_ARGUMENT;
         }
@@ -438,7 +441,10 @@ psa_status_t psa_asymmetric_decrypt(psa_key_id_t key,
     }
 
     if (PSA_KEY_TYPE_IS_RSA(attributes.type)) {
-        if (output == NULL) {
+        /* A NULL output pointer is only an error when the caller declared a
+         * nonzero capacity; (NULL, 0) must reach the required-size check in
+         * the backend worker. */
+        if (output == NULL && output_size != 0) {
             wolfpsa_forcezero_free_key_data(key_data, key_data_length);
             return PSA_ERROR_INVALID_ARGUMENT;
         }
@@ -471,9 +477,16 @@ static psa_status_t wolfpsa_sign_hash_worker(psa_key_id_t key,
     psa_key_attributes_t attributes;
     uint8_t *key_data = NULL;
     size_t key_data_length = 0;
+    size_t sig_size;
     psa_status_t status;
 
-    if (hash == NULL || signature == NULL || signature_length == NULL) {
+    if (signature_length == NULL) {
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    if (hash == NULL && hash_length != 0) {
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    if (signature == NULL && signature_size != 0) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
@@ -488,6 +501,14 @@ static psa_status_t wolfpsa_sign_hash_worker(psa_key_id_t key,
     if (status != PSA_SUCCESS) {
         wolfpsa_forcezero_free_key_data(key_data, key_data_length);
         return status;
+    }
+
+    /* Required signature capacity, so a zero-capacity buffer gets the
+     * contract status for every signature family. */
+    sig_size = PSA_SIGN_OUTPUT_SIZE(attributes.type, attributes.bits, alg);
+    if (sig_size != 0 && signature_size < sig_size) {
+        wolfpsa_forcezero_free_key_data(key_data, key_data_length);
+        return PSA_ERROR_BUFFER_TOO_SMALL;
     }
 
 #if defined(WOLFSSL_HAVE_MLDSA)
@@ -805,9 +826,16 @@ static psa_status_t wolfpsa_sign_message_worker(psa_key_id_t key,
     psa_algorithm_t hash_alg;
     uint8_t hash[WOLFPSA_HASH_MAX_SIZE];
     size_t hash_length = 0;
+    size_t sig_size;
     psa_status_t status;
 
-    if (input == NULL || signature == NULL || signature_length == NULL) {
+    if (signature_length == NULL) {
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    if (input == NULL && input_length != 0) {
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    if (signature == NULL && signature_size != 0) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
@@ -822,6 +850,14 @@ static psa_status_t wolfpsa_sign_message_worker(psa_key_id_t key,
     if (status != PSA_SUCCESS) {
         wolfpsa_forcezero_free_key_data(key_data, key_data_length);
         return status;
+    }
+
+    /* Required signature capacity, so a zero-capacity buffer gets the
+     * contract status for every signature family. */
+    sig_size = PSA_SIGN_OUTPUT_SIZE(attributes.type, attributes.bits, alg);
+    if (sig_size != 0 && signature_size < sig_size) {
+        wolfpsa_forcezero_free_key_data(key_data, key_data_length);
+        return PSA_ERROR_BUFFER_TOO_SMALL;
     }
 
 #if defined(WOLFSSL_HAVE_MLDSA)
@@ -1504,7 +1540,7 @@ psa_status_t psa_raw_key_agreement(psa_algorithm_t alg,
     wolfpsa_trace("psa_raw_key_agreement(alg=0x%08x key=%u peer_len=%zu)",
                   (unsigned)alg, (unsigned)private_key, peer_key_length);
 
-    if (output == NULL || output_length == NULL) {
+    if (output_length == NULL || (output == NULL && output_size != 0)) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
     if (!PSA_ALG_IS_RAW_KEY_AGREEMENT(alg)) {

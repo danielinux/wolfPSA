@@ -200,6 +200,147 @@ static int test_mac_finish_zero_capacity(void)
 }
 
 /* F-13870: AEAD nonce and tag outputs accept (NULL, 0) as a size query. */
+static int test_rsa_zero_capacity(void)
+{
+    psa_key_attributes_t attrs = psa_key_attributes_init();
+    psa_key_id_t crypt_key = PSA_KEY_ID_NULL;
+    psa_key_id_t sign_key = PSA_KEY_ID_NULL;
+    uint8_t msg[16];
+    uint8_t ct[TEST_KEY_BITS / 8];
+    uint8_t sig[TEST_KEY_BITS / 8];
+    uint8_t hash[32];
+    size_t ct_len = 0;
+    size_t sig_len = 0;
+    size_t out_len = 0;
+    psa_algorithm_t sign_alg;
+    int rc = 0;
+
+    memset(msg, 0x42, sizeof(msg));
+    memset(hash, 0x33, sizeof(hash));
+    sign_alg = PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_256);
+
+    /* This wolfPSA build requires the key policy to name the exact
+     * algorithm, so the crypt and sign paths use separate keys. */
+    psa_set_key_type(&attrs, PSA_KEY_TYPE_RSA_KEY_PAIR);
+    psa_set_key_bits(&attrs, TEST_KEY_BITS);
+    psa_set_key_usage_flags(&attrs,
+                            PSA_KEY_USAGE_ENCRYPT | PSA_KEY_USAGE_DECRYPT);
+    psa_set_key_algorithm(&attrs, PSA_ALG_RSA_PKCS1V15_CRYPT);
+    rc |= check_status(psa_generate_key(&attrs, &crypt_key), PSA_SUCCESS,
+                       "generate RSA crypt key pair");
+
+    psa_set_key_usage_flags(&attrs,
+                            PSA_KEY_USAGE_SIGN_HASH |
+                            PSA_KEY_USAGE_VERIFY_HASH);
+    psa_set_key_algorithm(&attrs, sign_alg);
+    rc |= check_status(psa_generate_key(&attrs, &sign_key), PSA_SUCCESS,
+                       "generate RSA sign key pair");
+    if (rc != 0) {
+        return rc;
+    }
+
+    /* Encrypt: output is always modulus-sized. */
+    rc |= check_status(psa_asymmetric_encrypt(crypt_key,
+                                              PSA_ALG_RSA_PKCS1V15_CRYPT,
+                                              msg, sizeof(msg),
+                                              NULL, 0,
+                                              NULL, 0, &out_len),
+                       PSA_ERROR_BUFFER_TOO_SMALL,
+                       "rsa encrypt (NULL, 0)");
+
+    /* Real round trip, then decrypt into (NULL, 0). */
+    rc |= check_status(psa_asymmetric_encrypt(crypt_key,
+                                              PSA_ALG_RSA_PKCS1V15_CRYPT,
+                                              msg, sizeof(msg),
+                                              NULL, 0,
+                                              ct, sizeof(ct), &ct_len),
+                       PSA_SUCCESS,
+                       "rsa encrypt real buffer");
+    if (rc != 0) {
+        return rc;
+    }
+    rc |= check_status(psa_asymmetric_decrypt(crypt_key,
+                                              PSA_ALG_RSA_PKCS1V15_CRYPT,
+                                              ct, ct_len,
+                                              NULL, 0,
+                                              NULL, 0, &out_len),
+                       PSA_ERROR_BUFFER_TOO_SMALL,
+                       "rsa decrypt (NULL, 0)");
+
+    /* Sign a hash into (NULL, 0). */
+    rc |= check_status(psa_sign_hash(sign_key, sign_alg,
+                                     hash, sizeof(hash),
+                                     NULL, 0, &sig_len),
+                       PSA_ERROR_BUFFER_TOO_SMALL,
+                       "rsa sign_hash (NULL, 0)");
+
+    /* Verify with an empty signature: a mismatch, not an argument. */
+    rc |= check_status(psa_verify_hash(sign_key, sign_alg,
+                                       hash, sizeof(hash),
+                                       NULL, 0),
+                       PSA_ERROR_INVALID_SIGNATURE,
+                       "rsa verify_hash (NULL, 0)");
+
+    /* A valid signature verifies; a corrupted one maps to
+    * INVALID_SIGNATURE (F-13867), not a generic error. */
+    rc |= check_status(psa_sign_hash(sign_key, sign_alg,
+                                     hash, sizeof(hash),
+                                     sig, sizeof(sig), &sig_len),
+                       PSA_SUCCESS,
+                       "rsa sign_hash real buffer");
+    if (rc != 0) {
+        return rc;
+    }
+    rc |= check_status(psa_verify_hash(sign_key, sign_alg,
+                                       hash, sizeof(hash),
+                                       sig, sig_len),
+                       PSA_SUCCESS, "rsa verify_hash valid signature");
+    sig[sizeof(sig) / 2] ^= 0x01;
+    rc |= check_status(psa_verify_hash(sign_key, sign_alg,
+                                       hash, sizeof(hash),
+                                       sig, sig_len),
+                       PSA_ERROR_INVALID_SIGNATURE,
+                       "rsa verify_hash corrupted signature");
+
+    if (rc == 0) {
+        printf("PASS: rsa zero-capacity and pad error mapping\n");
+    }
+    return rc;
+}
+
+/* F-13868: raw key agreement accepts (NULL, 0) as a size query. */
+static int test_raw_key_agreement_zero_capacity(void)
+{
+    psa_key_attributes_t attrs = psa_key_attributes_init();
+    psa_key_id_t priv = PSA_KEY_ID_NULL;
+    uint8_t pub[65];
+    size_t pub_len = 0;
+    size_t out_len = 0;
+    int rc = 0;
+
+    psa_set_key_type(&attrs, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
+    psa_set_key_bits(&attrs, 256);
+    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_DERIVE);
+    psa_set_key_algorithm(&attrs, PSA_ALG_ECDH);
+    rc |= check_status(psa_generate_key(&attrs, &priv), PSA_SUCCESS,
+                       "generate ECC key pair");
+    rc |= check_status(psa_export_public_key(priv, pub, sizeof(pub),
+                                             &pub_len),
+                       PSA_SUCCESS, "export ECC public key");
+    rc |= check_status(psa_raw_key_agreement(PSA_ALG_ECDH,
+                                             priv,
+                                             pub, pub_len,
+                                             NULL, 0, &out_len),
+                       PSA_ERROR_BUFFER_TOO_SMALL,
+                       "raw_key_agreement (NULL, 0)");
+
+    if (rc == 0) {
+        printf("PASS: raw key agreement zero-capacity\n");
+    }
+    return rc;
+}
+
+/* F-13866: encapsulation accepts (NULL, 0) and clears its outputs. */
 static int test_encapsulate_zero_capacity(void)
 {
     psa_key_attributes_t attrs = psa_key_attributes_init();
@@ -256,6 +397,8 @@ int main(void)
     rc |= test_hash_finish_zero_capacity();
     rc |= test_hash_compare_empty_reference();
     rc |= test_mac_finish_zero_capacity();
+    rc |= test_rsa_zero_capacity();
+    rc |= test_raw_key_agreement_zero_capacity();
     rc |= test_encapsulate_zero_capacity();
 
     if (rc != 0) {
