@@ -579,6 +579,7 @@ static psa_status_t wolfpsa_aead_ccm_init(wolfpsa_aead_ctx_t *ctx)
     size_t msg_len;
     int ret;
     size_t i;
+    psa_status_t status;
 
     if (nonce_len < 7 || nonce_len > 13) {
         return PSA_ERROR_INVALID_ARGUMENT;
@@ -609,11 +610,13 @@ static psa_status_t wolfpsa_aead_ccm_init(wolfpsa_aead_ctx_t *ctx)
         msg_len >>= 8;
     }
     if (msg_len != 0) {
-        return PSA_ERROR_INVALID_ARGUMENT;
+        status = PSA_ERROR_INVALID_ARGUMENT;
+        goto ccm_init_done;
     }
     ret = wc_AesEncryptDirect(&ctx->ccm_aes, block, block);
     if (ret != 0) {
-        return wc_error_to_psa_status(ret);
+        status = wc_error_to_psa_status(ret);
+        goto ccm_init_done;
     }
     XMEMCPY(ctx->ccm_mac, block, 16);
 
@@ -653,7 +656,8 @@ static psa_status_t wolfpsa_aead_ccm_init(wolfpsa_aead_ctx_t *ctx)
         }
         ret = wc_AesEncryptDirect(&ctx->ccm_aes, ctx->ccm_mac, ctx->ccm_mac);
         if (ret != 0) {
-            return wc_error_to_psa_status(ret);
+            status = wc_error_to_psa_status(ret);
+            goto ccm_init_done;
         }
         while (aad_len > 0) {
             size_t n = (aad_len >= 16) ? 16 : aad_len;
@@ -665,7 +669,8 @@ static psa_status_t wolfpsa_aead_ccm_init(wolfpsa_aead_ctx_t *ctx)
             }
             ret = wc_AesEncryptDirect(&ctx->ccm_aes, ctx->ccm_mac, ctx->ccm_mac);
             if (ret != 0) {
-                return wc_error_to_psa_status(ret);
+                status = wc_error_to_psa_status(ret);
+                goto ccm_init_done;
             }
             aad += n;
             aad_len -= n;
@@ -682,12 +687,17 @@ static psa_status_t wolfpsa_aead_ccm_init(wolfpsa_aead_ctx_t *ctx)
     ctx->ccm_mfill = 0;
     ret = wc_AesEncryptDirect(&ctx->ccm_aes, ctx->ccm_ks, ctx->ccm_ctr);
     if (ret != 0) {
-        return wc_error_to_psa_status(ret);
+        status = wc_error_to_psa_status(ret);
+        goto ccm_init_done;
     }
     ctx->ccm_ks_off = 0;
     ctx->ccm_ks_valid = 1;
 
-    return PSA_SUCCESS;
+    status = PSA_SUCCESS;
+ccm_init_done:
+    /* block held B0, the A chaining value, and AAD blocks */
+    wc_ForceZero(block, sizeof(block));
+    return status;
 }
 
 /* Stream n message bytes: advance the running CBC-MAC over the plaintext and
