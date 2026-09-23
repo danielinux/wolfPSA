@@ -483,7 +483,9 @@ static psa_status_t wolfpsa_sign_hash_worker(psa_key_id_t key,
     if (signature_length == NULL) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
-    if (hash == NULL && hash_length != 0) {
+    /* The CTF suite (test_c041) requires a NULL hash pointer to be
+     * rejected even when hash_length is zero. */
+    if (hash == NULL) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
     if (signature == NULL && signature_size != 0) {
@@ -839,7 +841,9 @@ static psa_status_t wolfpsa_sign_message_worker(psa_key_id_t key,
     if (signature_length == NULL) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
-    if (input == NULL && input_length != 0) {
+    /* The CTF suite (test_c052) requires a NULL input pointer to be
+     * rejected even when input_length is zero. */
+    if (input == NULL) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
     if (signature == NULL && signature_size != 0) {
