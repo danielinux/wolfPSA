@@ -547,15 +547,21 @@ psa_status_t psa_aead_update_ad(psa_aead_operation_t *operation,
 }
 
 #if defined(HAVE_AESCCM) && defined(WOLFSSL_AES_DIRECT)
-/* Big-endian increment of the last lenSz bytes of a CCM counter block. */
+/* Big-endian increment of the last lenSz bytes of a CCM counter block.
+ * Fixed-iteration carry propagation: iteration count depends only on lenSz
+ * (a public value), never on the counter bytes. */
 static void wolfpsa_aead_ccm_ctr_inc(uint8_t *ctr, size_t lenSz)
 {
     size_t i;
+    uint8_t carry = 1;
+    uint8_t next;
 
     for (i = 0; i < lenSz; i++) {
-        if (++ctr[15 - i] != 0) {
-            return;
-        }
+        next = (uint8_t)(ctr[15 - i] + carry);
+        ctr[15 - i] = next;
+        /* A zero result only propagates the carry if one came in; a zero
+         * counter byte with no incoming carry must not re-arm it. */
+        carry = (uint8_t)(carry & (next == 0));
     }
 }
 
