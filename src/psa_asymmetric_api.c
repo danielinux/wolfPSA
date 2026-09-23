@@ -803,7 +803,7 @@ static psa_status_t wolfpsa_sign_message_worker(psa_key_id_t key,
     uint8_t *key_data = NULL;
     size_t key_data_length = 0;
     psa_algorithm_t hash_alg;
-    uint8_t hash[PSA_HASH_MAX_SIZE];
+    uint8_t hash[WOLFPSA_HASH_MAX_SIZE];
     size_t hash_length = 0;
     psa_status_t status;
 
@@ -847,7 +847,7 @@ static psa_status_t wolfpsa_sign_message_worker(psa_key_id_t key,
         }
         else {
             /* HashML-DSA: pre-hash the message then pass digest */
-            uint8_t mldsa_hash[PSA_HASH_MAX_SIZE];
+            uint8_t mldsa_hash[WOLFPSA_HASH_MAX_SIZE];
             size_t mldsa_hash_length = 0;
 
             hash_alg = PSA_ALG_GET_HASH(alg);
@@ -1010,7 +1010,7 @@ static psa_status_t wolfpsa_verify_message_worker(psa_key_id_t key,
     uint8_t *key_data = NULL;
     size_t key_data_length = 0;
     psa_algorithm_t hash_alg;
-    uint8_t hash[PSA_HASH_MAX_SIZE];
+    uint8_t hash[WOLFPSA_HASH_MAX_SIZE];
     size_t hash_length = 0;
     psa_status_t status;
 
@@ -1049,7 +1049,7 @@ static psa_status_t wolfpsa_verify_message_worker(psa_key_id_t key,
         }
         else {
             /* HashML-DSA: pre-hash the message then pass digest */
-            uint8_t mldsa_hash[PSA_HASH_MAX_SIZE];
+            uint8_t mldsa_hash[WOLFPSA_HASH_MAX_SIZE];
             size_t mldsa_hash_length = 0;
 
             hash_alg = PSA_ALG_GET_HASH(alg);

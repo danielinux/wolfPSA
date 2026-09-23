@@ -726,7 +726,7 @@ psa_status_t psa_hash_verify(psa_hash_operation_t *operation,
                             size_t hash_length)
 {
     psa_status_t status;
-    uint8_t computed_hash[PSA_HASH_MAX_SIZE];
+    uint8_t computed_hash[WOLFPSA_HASH_MAX_SIZE];
     size_t computed_hash_length;
 
     if (operation == NULL || hash == NULL) {
@@ -966,7 +966,7 @@ psa_status_t psa_hash_compare(psa_algorithm_t alg,
                              size_t hash_length)
 {
     psa_status_t status;
-    uint8_t computed_hash[PSA_HASH_MAX_SIZE];
+    uint8_t computed_hash[WOLFPSA_HASH_MAX_SIZE];
     size_t computed_hash_length;
     size_t expected_hash_size;
 
