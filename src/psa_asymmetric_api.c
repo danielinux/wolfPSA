@@ -539,7 +539,7 @@ static psa_status_t wolfpsa_sign_hash_worker(psa_key_id_t key,
     }
 #endif /* WOLFSSL_HAVE_MLDSA */
 
-    /* The hash workers only accept SIGN_HASH algorithms (HMAC, ECDSA, RSA,
+    /* The hash workers only accept SIGN_HASH algorithms (ECDSA, RSA,
      * Ed25519ph, Ed448ph). Message-only EdDSA (PSA_ALG_PURE_EDDSA /
      * PSA_ALG_EDDSA_CTX) is not a hash algorithm; the Ed25519/Ed448
      * helpers would interpret the hash buffer as a raw message. MLDSA is
@@ -678,7 +678,7 @@ static psa_status_t wolfpsa_verify_hash_worker(psa_key_id_t key,
     }
 #endif /* WOLFSSL_HAVE_MLDSA */
 
-    /* The hash workers only accept SIGN_HASH algorithms (HMAC, ECDSA, RSA,
+    /* The hash workers only accept SIGN_HASH algorithms (ECDSA, RSA,
      * Ed25519ph, Ed448ph). Message-only EdDSA (PSA_ALG_PURE_EDDSA /
      * PSA_ALG_EDDSA_CTX) is not a hash algorithm; the Ed25519/Ed448
      * helpers would interpret the hash buffer as a raw message. MLDSA is
