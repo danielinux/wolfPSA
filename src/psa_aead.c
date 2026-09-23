@@ -1233,7 +1233,9 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
     uint8_t empty_out = 0;
     uint8_t *out;
 
-    if (plaintext_length == NULL || tag == NULL) {
+    /* A NULL tag pointer is only an error when a nonzero length will be
+     * read; (NULL, 0) is a tag-length mismatch, handled below. */
+    if (plaintext_length == NULL || (tag == NULL && tag_length != 0)) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
     /* PSA_AEAD_VERIFY_OUTPUT_SIZE() is zero for the streaming algorithms, so a
@@ -1262,6 +1264,10 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
             (ctx->alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) == 0) {
             return PSA_ERROR_INVALID_SIGNATURE;
         }
+        if (tag_length < ctx->tag_length &&
+            (ctx->alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) != 0) {
+            return PSA_ERROR_INVALID_SIGNATURE;
+        }
         status = wolfpsa_aead_stream_final(ctx, (uint8_t *)tag,
                                            ctx->tag_length);
         if (status != PSA_SUCCESS) {
@@ -1277,10 +1283,9 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
-    if (plaintext_size < ctx->input_length) {
-        return PSA_ERROR_BUFFER_TOO_SMALL;
-    }
-
+    /* Check the tag before the plaintext capacity: a wrong-length tag is a
+     * verification mismatch even when the plaintext buffer is also short,
+     * matching the reference implementation's ordering. */
     if (tag_length != ctx->tag_length &&
         (ctx->alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) == 0) {
         return PSA_ERROR_INVALID_SIGNATURE;
@@ -1289,6 +1294,10 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
     if (tag_length < ctx->tag_length &&
         (ctx->alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) != 0) {
         return PSA_ERROR_INVALID_SIGNATURE;
+    }
+
+    if (plaintext_size < ctx->input_length) {
+        return PSA_ERROR_BUFFER_TOO_SMALL;
     }
 
     if ((wolfpsa_check_word32_length(ctx->input_length) != PSA_SUCCESS) ||

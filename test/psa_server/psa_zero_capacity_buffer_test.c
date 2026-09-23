@@ -255,6 +255,49 @@ static int test_aead_zero_capacity(void)
 }
 
 /* F-13871: verifying with a zero-length tag is INVALID_SIGNATURE. */
+static int test_aead_verify_empty_tag(void)
+{
+    psa_aead_operation_t op = PSA_AEAD_OPERATION_INIT;
+    psa_key_attributes_t attrs = psa_key_attributes_init();
+    psa_key_id_t key = PSA_KEY_ID_NULL;
+    uint8_t aes_key[32];
+    uint8_t nonce[12] = {0};
+    uint8_t data[16];
+    size_t out_len = 0;
+    int rc = 0;
+
+    memset(aes_key, 0x5a, sizeof(aes_key));
+    memset(data, 0x42, sizeof(data));
+    psa_set_key_type(&attrs, PSA_KEY_TYPE_AES);
+    psa_set_key_bits(&attrs, 256);
+    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_DECRYPT);
+    psa_set_key_algorithm(&attrs, PSA_ALG_AEAD_WITH_SHORTENED_TAG(
+                              PSA_ALG_GCM, 16));
+    rc |= check_status(psa_import_key(&attrs, aes_key, sizeof(aes_key),
+                                      &key),
+                       PSA_SUCCESS, "import AES key");
+    rc |= check_status(psa_aead_decrypt_setup(&op, key,
+                                              PSA_ALG_AEAD_WITH_SHORTENED_TAG(
+                                                  PSA_ALG_GCM, 16)),
+                       PSA_SUCCESS, "aead decrypt setup");
+    rc |= check_status(psa_aead_set_nonce(&op, nonce, sizeof(nonce)),
+                       PSA_SUCCESS, "aead set nonce");
+    rc |= check_status(psa_aead_update_ad(&op, data, sizeof(data)),
+                       PSA_SUCCESS, "aead update ad");
+    rc |= check_status(psa_aead_update(&op, data, sizeof(data),
+                                       NULL, 0, &out_len),
+                       PSA_SUCCESS, "aead update");
+    rc |= check_status(psa_aead_verify(&op, NULL, 0, &out_len, NULL, 0),
+                       PSA_ERROR_INVALID_SIGNATURE,
+                       "aead_verify tag (NULL, 0)");
+
+    if (rc == 0) {
+        printf("PASS: aead verify empty tag\n");
+    }
+    return rc;
+}
+
+/* F-13872: generating an IV into (NULL, 0) is BUFFER_TOO_SMALL. */
 static int test_rsa_zero_capacity(void)
 {
     psa_key_attributes_t attrs = psa_key_attributes_init();
@@ -453,6 +496,7 @@ int main(void)
     rc |= test_hash_compare_empty_reference();
     rc |= test_mac_finish_zero_capacity();
     rc |= test_aead_zero_capacity();
+    rc |= test_aead_verify_empty_tag();
     rc |= test_rsa_zero_capacity();
     rc |= test_raw_key_agreement_zero_capacity();
     rc |= test_encapsulate_zero_capacity();
