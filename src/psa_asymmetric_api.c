@@ -631,7 +631,14 @@ static psa_status_t wolfpsa_verify_hash_worker(psa_key_id_t key,
     size_t key_data_length = 0;
     psa_status_t status;
 
-    if (hash == NULL || signature == NULL) {
+    if (hash == NULL && hash_length != 0) {
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    if (signature_length == 0) {
+        /* An empty signature cannot verify. */
+        return PSA_ERROR_INVALID_SIGNATURE;
+    }
+    if (signature == NULL) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
@@ -1050,7 +1057,14 @@ static psa_status_t wolfpsa_verify_message_worker(psa_key_id_t key,
     size_t hash_length = 0;
     psa_status_t status;
 
-    if (input == NULL || signature == NULL) {
+    if (input == NULL && input_length != 0) {
+        return PSA_ERROR_INVALID_ARGUMENT;
+    }
+    if (signature_length == 0) {
+        /* An empty signature cannot verify. */
+        return PSA_ERROR_INVALID_SIGNATURE;
+    }
+    if (signature == NULL) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
