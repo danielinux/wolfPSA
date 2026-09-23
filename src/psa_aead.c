@@ -710,13 +710,15 @@ static psa_status_t wolfpsa_aead_ccm_update(wolfpsa_aead_ctx_t *ctx,
     uint8_t pt_byte;
     size_t i;
     int ret;
+    psa_status_t status = PSA_SUCCESS;
 
     for (i = 0; i < n; i++) {
         if (ctx->ccm_ks_off == 16) {
             wolfpsa_aead_ccm_ctr_inc(ctx->ccm_ctr, ctx->ccm_lenSz);
             ret = wc_AesEncryptDirect(&ctx->ccm_aes, ctx->ccm_ks, ctx->ccm_ctr);
             if (ret != 0) {
-                return wc_error_to_psa_status(ret);
+                status = wc_error_to_psa_status(ret);
+                goto ccm_update_done;
             }
             ctx->ccm_ks_off = 0;
         }
@@ -742,15 +744,20 @@ static psa_status_t wolfpsa_aead_ccm_update(wolfpsa_aead_ctx_t *ctx,
             }
             ret = wc_AesEncryptDirect(&ctx->ccm_aes, tmp, ctx->ccm_mac);
             if (ret != 0) {
-                return wc_error_to_psa_status(ret);
+                status = wc_error_to_psa_status(ret);
+                goto ccm_update_done;
             }
             XMEMCPY(ctx->ccm_mac, tmp, 16);
+            wc_ForceZero(tmp, sizeof(tmp));
             ctx->ccm_mfill = 0;
             XMEMSET(ctx->ccm_mblk, 0, sizeof(ctx->ccm_mblk));
         }
     }
 
-    return PSA_SUCCESS;
+ccm_update_done:
+    /* tmp held CBC-MAC output blocks */
+    wc_ForceZero(tmp, sizeof(tmp));
+    return status;
 }
 
 /* Finalize the last (possibly partial) message block and emit the tag:
