@@ -2575,6 +2575,10 @@ psa_status_t psa_copy_key(
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
+    /* The API guarantees PSA_KEY_ID_NULL on failure, so clear the output
+     * before any fallible operation below. */
+    *target_key = PSA_KEY_ID_NULL;
+
     /* Check if the key storage is initialized */
     status = psa_key_storage_check_init();
     if (status != PSA_SUCCESS) {
