@@ -769,6 +769,7 @@ static psa_status_t wolfpsa_aead_ccm_finish(wolfpsa_aead_ctx_t *ctx,
     uint8_t b1[16];
     size_t i;
     int ret;
+    psa_status_t status;
 
     if (ctx->ccm_mfill > 0) {
         for (i = 0; i < 16; i++) {
@@ -777,9 +778,11 @@ static psa_status_t wolfpsa_aead_ccm_finish(wolfpsa_aead_ctx_t *ctx,
         }
         ret = wc_AesEncryptDirect(&ctx->ccm_aes, tmp, ctx->ccm_mac);
         if (ret != 0) {
-            return wc_error_to_psa_status(ret);
+            status = wc_error_to_psa_status(ret);
+            goto ccm_finish_done;
         }
         XMEMCPY(ctx->ccm_mac, tmp, 16);
+        wc_ForceZero(tmp, sizeof(tmp));
     }
 
     XMEMSET(b1, 0, sizeof(b1));
@@ -787,13 +790,18 @@ static psa_status_t wolfpsa_aead_ccm_finish(wolfpsa_aead_ctx_t *ctx,
     XMEMCPY(b1 + 1, ctx->nonce, ctx->nonce_length);
     ret = wc_AesEncryptDirect(&ctx->ccm_aes, tmp, b1);
     if (ret != 0) {
-        return wc_error_to_psa_status(ret);
+        status = wc_error_to_psa_status(ret);
+        goto ccm_finish_done;
     }
     for (i = 0; i < tag_len; i++) {
         tag[i] = (uint8_t)(ctx->ccm_mac[i] ^ tmp[i]);
     }
 
-    return PSA_SUCCESS;
+    status = PSA_SUCCESS;
+ccm_finish_done:
+    /* tmp held the final MAC block and the S0 keystream block */
+    wc_ForceZero(tmp, sizeof(tmp));
+    return status;
 }
 #endif /* HAVE_AESCCM && WOLFSSL_AES_DIRECT */
 
