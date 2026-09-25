@@ -1300,12 +1300,7 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
              ctx->input_length != ctx->plaintext_expected)) {
             return PSA_ERROR_INVALID_ARGUMENT;
         }
-        if (tag_length != ctx->tag_length &&
-            (ctx->alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) == 0) {
-            return PSA_ERROR_INVALID_SIGNATURE;
-        }
-        if (tag_length < ctx->tag_length &&
-            (ctx->alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) != 0) {
+        if (tag_length != ctx->tag_length) {
             return PSA_ERROR_INVALID_SIGNATURE;
         }
         status = wolfpsa_aead_stream_final(ctx, (uint8_t *)tag,
@@ -1325,14 +1320,10 @@ static psa_status_t wolfpsa_aead_decrypt_final(wolfpsa_aead_ctx_t *ctx,
 
     /* Check the tag before the plaintext capacity: a wrong-length tag is a
      * verification mismatch even when the plaintext buffer is also short,
-     * matching the reference implementation's ordering. */
-    if (tag_length != ctx->tag_length &&
-        (ctx->alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) == 0) {
-        return PSA_ERROR_INVALID_SIGNATURE;
-    }
-
-    if (tag_length < ctx->tag_length &&
-        (ctx->alg & PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG) != 0) {
+     * matching the reference implementation's ordering. An exact comparison
+     * is enough: wolfpsa_aead_setup() rejects every algorithm carrying
+     * PSA_ALG_AEAD_AT_LEAST_THIS_LENGTH_FLAG, so ctx->alg never has it. */
+    if (tag_length != ctx->tag_length) {
         return PSA_ERROR_INVALID_SIGNATURE;
     }
 
