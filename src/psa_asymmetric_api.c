@@ -636,11 +636,7 @@ static psa_status_t wolfpsa_verify_hash_worker(psa_key_id_t key,
     if (hash == NULL && hash_length != 0) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
-    if (signature_length == 0) {
-        /* An empty signature cannot verify. */
-        return PSA_ERROR_INVALID_SIGNATURE;
-    }
-    if (signature == NULL) {
+    if (signature == NULL && signature_length != 0) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
@@ -648,6 +644,14 @@ static psa_status_t wolfpsa_verify_hash_worker(psa_key_id_t key,
                                           &attributes, &key_data, &key_data_length);
     if (status != PSA_SUCCESS) {
         return status;
+    }
+
+    /* After the key check, so a bad handle or a missing usage flag still
+     * outranks the signature verdict. */
+    if (signature_length == 0) {
+        /* An empty signature cannot verify. */
+        wolfpsa_forcezero_free_key_data(key_data, key_data_length);
+        return PSA_ERROR_INVALID_SIGNATURE;
     }
 
     status = wolfpsa_check_context(alg, attributes.type, attributes.bits,
@@ -1064,11 +1068,7 @@ static psa_status_t wolfpsa_verify_message_worker(psa_key_id_t key,
     if (input == NULL && input_length != 0) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
-    if (signature_length == 0) {
-        /* An empty signature cannot verify. */
-        return PSA_ERROR_INVALID_SIGNATURE;
-    }
-    if (signature == NULL) {
+    if (signature == NULL && signature_length != 0) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
@@ -1076,6 +1076,14 @@ static psa_status_t wolfpsa_verify_message_worker(psa_key_id_t key,
                                           &attributes, &key_data, &key_data_length);
     if (status != PSA_SUCCESS) {
         return status;
+    }
+
+    /* After the key check, so a bad handle or a missing usage flag still
+     * outranks the signature verdict. */
+    if (signature_length == 0) {
+        /* An empty signature cannot verify. */
+        wolfpsa_forcezero_free_key_data(key_data, key_data_length);
+        return PSA_ERROR_INVALID_SIGNATURE;
     }
 
     status = wolfpsa_check_context(alg, attributes.type, attributes.bits,
