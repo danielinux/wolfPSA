@@ -505,14 +505,6 @@ static psa_status_t wolfpsa_sign_hash_worker(psa_key_id_t key,
         return status;
     }
 
-    /* Required signature capacity, so a zero-capacity buffer gets the
-     * contract status for every signature family. */
-    sig_size = PSA_SIGN_OUTPUT_SIZE(attributes.type, attributes.bits, alg);
-    if (sig_size != 0 && signature_size < sig_size) {
-        wolfpsa_forcezero_free_key_data(key_data, key_data_length);
-        return PSA_ERROR_BUFFER_TOO_SMALL;
-    }
-
 #if defined(WOLFSSL_HAVE_MLDSA)
     if (PSA_KEY_TYPE_IS_ML_DSA(attributes.type)) {
         /* Pure ML-DSA (sign_hash is not applicable for pure ML-DSA) */
@@ -565,6 +557,16 @@ static psa_status_t wolfpsa_sign_hash_worker(psa_key_id_t key,
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 #endif
+
+    /* Required signature capacity, so a zero-capacity buffer gets the
+     * contract status for every signature family. Checked after the
+     * algorithm and key-type rejections above: a call that can never succeed
+     * must report why, not a buffer problem. */
+    sig_size = PSA_SIGN_OUTPUT_SIZE(attributes.type, attributes.bits, alg);
+    if (sig_size != 0 && signature_size < sig_size) {
+        wolfpsa_forcezero_free_key_data(key_data, key_data_length);
+        return PSA_ERROR_BUFFER_TOO_SMALL;
+    }
 
     if (PSA_KEY_TYPE_IS_RSA(attributes.type)) {
         status = psa_asymmetric_sign_rsa(attributes.type, attributes.bits,
