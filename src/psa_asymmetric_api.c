@@ -980,7 +980,11 @@ static psa_status_t wolfpsa_sign_message_worker(psa_key_id_t key,
             status = PSA_ERROR_INVALID_ARGUMENT;
             goto cleanup;
         }
-        XMEMCPY(hash, input, hash_length);
+        if (hash_length > 0) {
+            /* memcpy's pointers are declared nonnull, so a (NULL, 0) input
+             * must not reach it. */
+            XMEMCPY(hash, input, hash_length);
+        }
     }
     else {
         hash_alg = PSA_ALG_SIGN_GET_HASH(alg);
@@ -1226,7 +1230,11 @@ static psa_status_t wolfpsa_verify_message_worker(psa_key_id_t key,
             status = PSA_ERROR_INVALID_ARGUMENT;
             goto cleanup;
         }
-        XMEMCPY(hash, input, hash_length);
+        if (hash_length > 0) {
+            /* memcpy's pointers are declared nonnull, so a (NULL, 0) input
+             * must not reach it. */
+            XMEMCPY(hash, input, hash_length);
+        }
     }
     else {
         hash_alg = PSA_ALG_SIGN_GET_HASH(alg);

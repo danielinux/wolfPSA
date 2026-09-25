@@ -1692,7 +1692,12 @@ psa_status_t psa_cipher_decrypt(psa_key_id_t key,
         offset = iv_len;
     }
 
-    status = psa_cipher_update(&operation, input + offset, input_length - offset,
+    /* NULL + 0 is undefined even though the length is zero, and a (NULL, 0)
+     * input reaches here for ECB, where offset stays 0. */
+    if (input != NULL) {
+        input += offset;
+    }
+    status = psa_cipher_update(&operation, input, input_length - offset,
                                output, output_size, &out_len);
     if (status != PSA_SUCCESS) {
         psa_cipher_abort(&operation);
