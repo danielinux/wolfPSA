@@ -71,8 +71,10 @@ static int test_export_zero_capacity(void)
     psa_key_attributes_t attrs = psa_key_attributes_init();
     psa_key_id_t aes_key_id = PSA_KEY_ID_NULL;
     psa_key_id_t ecc_key_id = PSA_KEY_ID_NULL;
+    psa_key_id_t ed_key_id = PSA_KEY_ID_NULL;
     uint8_t aes_key[32];
     size_t len = 0;
+    psa_status_t st;
     int rc = 0;
 
     memset(aes_key, 0x5a, sizeof(aes_key));
@@ -99,6 +101,28 @@ static int test_export_zero_capacity(void)
     rc |= check_status(psa_export_public_key(ecc_key_id, NULL, 0, &len),
                        PSA_ERROR_BUFFER_TOO_SMALL,
                        "export_public_key(NULL, 0)");
+
+    /* The Edwards exporters used to hand the NULL straight to wolfCrypt,
+     * which reported it as INVALID_ARGUMENT instead. */
+    attrs = psa_key_attributes_init();
+    psa_set_key_type(&attrs,
+                     PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_TWISTED_EDWARDS));
+    psa_set_key_bits(&attrs, 255);
+    psa_set_key_usage_flags(&attrs, PSA_KEY_USAGE_EXPORT);
+    psa_set_key_algorithm(&attrs, PSA_ALG_PURE_EDDSA);
+    st = psa_generate_key(&attrs, &ed_key_id);
+    if (st == PSA_ERROR_NOT_SUPPORTED) {
+        printf("SKIP: Ed25519 export zero-capacity (not supported)\n");
+    }
+    else if (check_status(st, PSA_SUCCESS, "generate Ed25519 key") != 0) {
+        rc |= 1;
+    }
+    else {
+        rc |= check_status(psa_export_public_key(ed_key_id, NULL, 0, &len),
+                           PSA_ERROR_BUFFER_TOO_SMALL,
+                           "export_public_key(Ed25519, NULL, 0)");
+        (void)psa_destroy_key(ed_key_id);
+    }
 
     if (rc == 0) {
         printf("PASS: export zero-capacity\n");
@@ -159,6 +183,22 @@ static int test_hash_compare_empty_reference(void)
                                        NULL, 0),
                       PSA_ERROR_INVALID_SIGNATURE,
                       "hash_compare(NULL, 0)");
+
+    /* psa_hash_verify() must agree: an empty reference is a mismatch, not an
+     * argument error. */
+    {
+        psa_hash_operation_t op = PSA_HASH_OPERATION_INIT;
+
+        rc |= check_status(psa_hash_setup(&op, PSA_ALG_SHA_256),
+                           PSA_SUCCESS, "hash setup for verify");
+        rc |= check_status(psa_hash_update(&op, data, sizeof(data)),
+                           PSA_SUCCESS, "hash update for verify");
+        rc |= check_status(psa_hash_verify(&op, NULL, 0),
+                           PSA_ERROR_INVALID_SIGNATURE,
+                           "hash_verify(NULL, 0)");
+        (void)psa_hash_abort(&op);
+    }
+
     if (rc == 0) {
         printf("PASS: hash compare empty reference\n");
     }
@@ -206,7 +246,7 @@ static int test_aead_zero_capacity(void)
     psa_key_attributes_t attrs = psa_key_attributes_init();
     psa_key_id_t key = PSA_KEY_ID_NULL;
     uint8_t aes_key[32];
-    uint8_t nonce[12];
+    uint8_t nonce[12] = {0};
     uint8_t data[16];
     size_t nonce_len = 0;
     size_t out_len = 0;
@@ -321,6 +361,11 @@ static int test_cipher_generate_iv_zero_capacity(void)
     rc |= check_status(psa_cipher_generate_iv(&op, NULL, 0, &len),
                        PSA_ERROR_BUFFER_TOO_SMALL,
                        "cipher_generate_iv(NULL, 0)");
+
+    /* generate_iv does not abort on BUFFER_TOO_SMALL, so the operation is
+     * still live here. */
+    (void)psa_cipher_abort(&op);
+    (void)psa_destroy_key(key);
 
     if (rc == 0) {
         printf("PASS: cipher generate IV zero-capacity\n");
