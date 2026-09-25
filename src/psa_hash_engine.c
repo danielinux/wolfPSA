@@ -729,7 +729,10 @@ psa_status_t psa_hash_verify(psa_hash_operation_t *operation,
     uint8_t computed_hash[WOLFPSA_HASH_MAX_SIZE];
     size_t computed_hash_length;
 
-    if (operation == NULL || hash == NULL) {
+    /* A NULL reference is only an argument error when it claims a length;
+     * (NULL, 0) is a length mismatch, which the check below reports as
+     * INVALID_SIGNATURE, matching psa_hash_compare(). */
+    if (operation == NULL || (hash == NULL && hash_length != 0)) {
         return PSA_ERROR_INVALID_ARGUMENT;
     }
 
