@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased: PSA Certified Crypto API 1.4 + PQC extension 1.4
+## v5.9.4
+
+PSA Certified Crypto API 1.4 + PQC extension 1.4.
 
 Upgrade of the public API surface and implementation to PSA Certified
-Crypto API 1.4 Final and the PQC extension 1.4, built against current
-wolfSSL master.
+Crypto API 1.4 Final and the PQC extension 1.4. This release is validated
+against wolfSSL `v5.9.4-stable`: unit tests, TLS client/server, wolfCrypt
+benchmark, the Arm PSA Architecture Test Suite and the Zephyr 4.3/4.4
+samples run in CI against both that tag and wolfSSL master.
 
 ### Breaking changes
 
