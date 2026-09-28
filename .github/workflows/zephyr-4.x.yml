@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   build:
-    name: ${{ matrix.zephyr-ref }}
+    name: ${{ matrix.zephyr-ref }} / wolfSSL ${{ matrix.wolfssl-ref }}
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -29,6 +29,8 @@ jobs:
       matrix:
         # 4.3 = the wolfPSA floor (upstream), 4.4 = current target.
         zephyr-ref: [ v4.3.0, v4.4.0 ]
+        # wolfSSL master plus the -stable tag wolfPSA is validated against.
+        wolfssl-ref: [ master, v5.9.4-stable ]
     steps:
       - name: Checkout wolfPSA CI driver
         uses: actions/checkout@v5
@@ -59,9 +61,8 @@ jobs:
       - name: Build and run wolfPSA samples/tests
         working-directory: .github/scripts/zephyr-4.x
         run: |
-          # wolfSSL repo/ref default to upstream wolfSSL/wolfssl master in the
-          # script.
           bash ./zephyr-test.sh \
             -r "${{ steps.src.outputs.repo }}" \
             -b "${{ steps.src.outputs.ref }}" \
-            -z "${{ matrix.zephyr-ref }}"
+            -z "${{ matrix.zephyr-ref }}" \
+            --wolfssl-ref "${{ matrix.wolfssl-ref }}"
