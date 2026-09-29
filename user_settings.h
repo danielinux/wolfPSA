@@ -116,7 +116,7 @@
 #define WOLFSSL_LMS_VERIFY_ONLY
 #define WOLFSSL_HAVE_XMSS
 #define WOLFSSL_XMSS_VERIFY_ONLY
-/* Ascon is marked experimental in wolfSSL master and refuses to build
+/* Ascon is marked experimental in wolfSSL (5.9.4+) and refuses to build
  * without this opt-in. */
 #define WOLFSSL_EXPERIMENTAL_SETTINGS
 #define HAVE_ASCON

@@ -22,13 +22,14 @@
 # Examples:
 #   ./zephyr-test.sh -z v4.3.0
 #   ./zephyr-test.sh -r https://github.com/me/wolfPSA -b my-fix -z v4.4.0
+#   ./zephyr-test.sh -z v4.4.0 --wolfssl-ref v5.9.4-stable
 
 set -euo pipefail
 
 # Defaults point at the upstream wolfSSL org. The workflow sets -r/-b to the
-# wolfPSA code under test and leaves the wolfSSL repo/ref at these upstream
-# defaults. The --wolfssl-repo/--wolfssl-ref flags remain for pointing at a
-# fork locally.
+# wolfPSA code under test and --wolfssl-ref from its matrix (master plus the
+# -stable tag wolfPSA is validated against), leaving the wolfSSL repo at the
+# upstream default. --wolfssl-repo remains for pointing at a fork locally.
 WOLFPSA_REPO="https://github.com/wolfSSL/wolfPSA"
 WOLFPSA_BRANCH="master"
 ZEPHYR_VERSION="v4.4.0"

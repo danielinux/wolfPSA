@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased: PSA Certified Crypto API 1.4 + PQC extension 1.4
+## v5.9.4
+
+PSA Certified Crypto API 1.4 + PQC extension 1.4.
 
 Upgrade of the public API surface and implementation to PSA Certified
-Crypto API 1.4 Final and the PQC extension 1.4, built against current
-wolfSSL master.
+Crypto API 1.4 Final and the PQC extension 1.4. This release is validated
+against wolfSSL `v5.9.4-stable`: unit tests, TLS client/server, wolfCrypt
+benchmark, the Arm PSA Architecture Test Suite and the Zephyr 4.3/4.4
+samples run in CI against both that tag and wolfSSL master.
 
 ### Breaking changes
 
@@ -42,6 +46,50 @@ wolfSSL master.
   by neither the effective uid nor root, is refused, and every ancestor is
   checked as well (a shared parent such as `/tmp` is accepted when sticky).
   Stores that relied on a permissive directory will stop opening.
+- wolfSSL >= 5.9.2 is required: the ML-DSA backend moved to `wc_mldsa.c`,
+  which wolfSSL v5.9.1 does not ship (this release is tested against
+  v5.9.4-stable). Custom `user_settings.h` files enable ML-DSA with
+  `WOLFSSL_HAVE_MLDSA`, not `HAVE_DILITHIUM`.
+- Overlapping input and output buffers are refused with
+  `PSA_ERROR_NOT_SUPPORTED` in `psa_cipher_encrypt()`/`psa_cipher_decrypt()`
+  (every mode with an IV) and in `psa_cipher_update()` for the block modes
+  (ECB, CBC, CBC-PKCS7). In-place `psa_cipher_update()` still works for the
+  stream modes (CTR, CFB, OFB, CCM*, ChaCha20).
+- Multipart AEAD streams: `psa_aead_update()` returns output as it goes and
+  `psa_aead_finish()`/`psa_aead_verify()` emit only the tag, per the PSA
+  contract, instead of buffering the whole payload until finish. Callers must
+  size the update output buffers accordingly. Additional data supplied after
+  payload has started is rejected with `PSA_ERROR_BAD_STATE`.
+- Auto-assigned key ids come from the vendor range
+  (`PSA_KEY_ID_VENDOR_MIN`..`PSA_KEY_ID_VENDOR_MAX`) instead of starting at 1,
+  so they can no longer collide with caller-chosen persistent ids.
+- Importing a persistent key under an id already in use fails with
+  `PSA_ERROR_ALREADY_EXISTS` instead of overwriting the stored key.
+- Key lifetimes that name a storage location other than local storage are
+  rejected instead of being stored locally in plaintext.
+- Stricter key policies: key-derivation inputs require
+  `PSA_KEY_USAGE_DERIVE`; key agreement checks the full policy algorithm, not
+  only its base; permission checks require every requested usage bit;
+  `PSA_ALG_ANY_HASH` signature policies are honoured (within one family for
+  HashML-DSA); `psa_copy_key()` accepts narrowing a wildcard policy to a
+  concrete algorithm and intersects MAC/AEAD length wildcards.
+- `psa_import_key()` checks declared bits against the data length for
+  byte-string key types (HMAC, RAW_DATA, DERIVE, PASSWORD, PASSWORD_HASH,
+  PEPPER), and refuses imports whose inferred bits overflow.
+- Changed status codes: an empty signature, tag or reference digest reports
+  `PSA_ERROR_INVALID_SIGNATURE`, as does a wrong-length raw ECDSA signature;
+  a failed RSA decrypt unpad reports `PSA_ERROR_INVALID_PADDING`; an
+  unsupported GCM nonce length reports `PSA_ERROR_NOT_SUPPORTED`; store
+  allocation failures report `PSA_ERROR_INSUFFICIENT_MEMORY`; a store record
+  that exists but cannot be opened reports `PSA_ERROR_STORAGE_FAILURE`
+  instead of `PSA_ERROR_INVALID_HANDLE`.
+- `NULL` buffers with zero length or zero capacity are accepted across the
+  API (outputs, nonces, tags, exports, IV generation, encapsulation), and a
+  zero-byte generation request succeeds.
+- Shortened-tag ChaCha20-Poly1305, XChaCha20-Poly1305 and Ascon AEAD
+  algorithms are rejected at setup. Ed448 PureEdDSA rejects a non-empty
+  context. TLS 1.2 PSK-to-MS rejects PSKs above
+  `PSA_TLS12_PSK_TO_MS_PSK_MAX_SIZE` (128).
 
 ### Added
 
@@ -94,16 +142,57 @@ wolfSSL master.
   AES-KW, RIPEMD-160, MD5, Ascon and ChaCha20-Poly1305 stay local;
   `wolfpsa/psa_engine.h` documents why, plus the X25519 and
   `WOLF_CRYPTO_CB_FIND` caveats.
-- Fixed: the HMAC path of `psa_mac_*` never called `wc_HmacInit()`, so it
-  ran with devId 0 and a callback registered on device 0 captured wolfPSA's
-  HMACs while every other algorithm stayed local.
-- Fixed: the one-shot AEAD paths called `wc_AesFree()` on uninitialized heap
-  when `wc_AesInit()` failed, reading `Aes.devId` and freeing `Aes.streamData`
-  from unwritten memory. Allocation and init are now one step.
 - Optional thread-safe key store: with `WOLFPSA_THREAD_SAFE` a single mutex
   built on wolfCrypt's portable `wc_*Mutex` API (created in `psa_crypto_init()`)
   guards the volatile-key list and id counter for concurrent PSA callers; a
   no-op in single-threaded builds.
+
+### Security
+
+- Side-channel hardening is on in the default build: `WC_NO_HARDEN` was
+  replaced with `TFM_TIMING_RESISTANT`, `ECC_TIMING_RESISTANT` and
+  `WC_RSA_BLINDING`, so RSA and ECC private-key operations use the
+  constant-time paths and RSA blinding.
+- `psa_import_key()` rejects a `data_length` that would wrap the internal
+  buffer size (a heap overflow for key types without an exact-length check).
+- ECC keys are pinned to their curve: a public key on import and verify, the
+  peer point in ECDH, and the exported public key. secp256k1 and Brainpool
+  are only accepted when `HAVE_ECC_KOBLITZ` / `HAVE_ECC_BRAINPOOL` are set.
+- Sensitive intermediate data is zeroized: cipher partial blocks and padded
+  plaintext on every exit, the CCM init/update/finish stack state, the
+  computed tag in multipart verify, KDF output on a mid-stream error, and
+  export buffers on a short key-data read.
+- A failed `psa_copy_key()` clears the target id, and the interruptible
+  max-ops setting is held in an atomic.
+
+### Fixed
+
+- RSA PKCS#1 v1.5 hashed verify compared the recovered DigestInfo with the
+  raw hash, so every valid signature failed; `hash_length` is now bound to
+  the algorithm's digest length on sign and verify.
+- PBKDF2-AES-CMAC-PRF-128 normalized 16-byte passwords instead of using them
+  directly (RFC 4615), deriving keys that disagreed with other implementations.
+- The CCM counter increment lost its carry for nonces shorter than 13 bytes,
+  silently corrupting multipart CCM output past the first block.
+- The TLS 1.2 PRF KDFs passed the wrong MAC algorithm id to `wc_PRF_TLS()`.
+- OFB and CFB decryption keyed AES for the decrypt direction; both modes
+  run the block cipher forward, so they now use the encrypt key schedule.
+- Ed25519ph/Ed448ph sign/verify enforce a 64-byte prehash, and SHAKE256-512
+  was added to the hash engine so `psa_sign_message()` and
+  `psa_verify_message()` work for Ed448ph.
+- Standalone EdDSA and Montgomery key generation and public-key export work in
+  builds without `HAVE_ECC`; `psa_export_public_key()` no longer falls through
+  for disabled PQC backends.
+- A second `psa_aead_set_lengths()` call reports `PSA_ERROR_BAD_STATE`;
+  multipart AEAD length checks and the streaming GCM guards were corrected.
+- `psa_hash_compare()` rejects a `NULL` reference hash; generic ECDH reports
+  NOT_SUPPORTED up front when no RNG is built, instead of failing at the end.
+- The HMAC path of `psa_mac_*` never called `wc_HmacInit()`, so it
+  ran with devId 0 and a callback registered on device 0 captured wolfPSA's
+  HMACs while every other algorithm stayed local.
+- The one-shot AEAD paths called `wc_AesFree()` on uninitialized heap
+  when `wc_AesInit()` failed, reading `Aes.devId` and freeing `Aes.streamData`
+  from unwritten memory. Allocation and init are now one step.
 
 ### Build configuration
 
@@ -127,6 +216,11 @@ wolfSSL master.
 - The multipart AEAD context holds its GCM and CCM `Aes` in a union, since an
   operation is one or the other. Under `WC_AES_BITSLICED` that takes
   `sizeof(wolfpsa_aead_ctx_t)` from 247,032 bytes to 123,736.
+- `make unit-run` builds and runs every unit and regression test, and
+  `make cov` produces an HTML gcov coverage report for `src/`.
+- CI runs the regression suite, a build-configuration matrix with each
+  feature switched off, and every functional workflow against both wolfSSL
+  master and `v5.9.4-stable`.
 
 ### Zephyr module
 
@@ -145,6 +239,9 @@ wolfSSL master.
   `psa_its_*`/`psa_ps_*`).
 - wolfPSA follows the user's wolfCrypt configuration and exposes exactly the
   enabled, wolfPSA-implemented algorithms as the PSA API.
+- The module selects the wolfSSL module's constant-time AES backend and ECC
+  zero-hash allowance by default, and the store returns `MEMORY_E` when an
+  allocation fails.
 
 
 ## v5.9.1

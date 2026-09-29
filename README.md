@@ -20,6 +20,19 @@ wolfPSA is a PSA Crypto **engine** that implements the PSA Crypto API on
 
 ## Build
 
+### wolfSSL version
+
+wolfPSA follows wolfSSL version numbering: wolfPSA v5.9.4 is tested against
+wolfSSL `v5.9.4-stable`. To build against the matching release:
+
+```
+git clone --branch v5.9.4-stable https://github.com/wolfSSL/wolfssl
+```
+
+CI also tests against wolfSSL master.
+
+### Building
+
 The build system assumes that wolfSSL is available in a sibling directory under
 the same path as this repository, e.g:
 
@@ -55,9 +68,9 @@ make wolfPSA WOLFSSL_PATH=~/src/wolfssl
 
 ## Testing (PSA Architecture Test Suite)
 
-See `psa-arch-tests/README.md` for instructions on how to run the tests.
+See `test-psa-api/README.md` for instructions on how to run the tests.
 
-### Current PSA crypto test results:
+### Current PSA crypto test results (wolfSSL v5.9.4-stable):
 
 ```
 ************ Crypto Suite Report ************
